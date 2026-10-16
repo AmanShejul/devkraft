@@ -45,7 +45,7 @@ export default function HomePage() {
             <div className="flex items-center justify-between text-xs font-bold text-white/65"><span>UP NEXT</span><CirclePlay size={17} className="text-[#f0c46a]" /></div>
             <p className="mt-3 text-lg font-bold">Count it down</p>
             <p className="mt-1 text-xs leading-5 text-white/65">A 12-minute practice mission on loops.</p>
-            <div className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-[#f0c46a]">Open student view <ArrowRight size={14} /></div>
+            <Link href="/student" className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-[#f0c46a] hover:text-[#ffe4a5]">Open student view <ArrowRight size={14} /></Link>
           </div>
         </div>
       </section>

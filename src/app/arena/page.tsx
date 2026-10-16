@@ -12,9 +12,7 @@ export const metadata: Metadata = { title: "Coding arena" };
 export default function ArenaPage() {
   return <PageLayout>
     <Link href="/student" className="mb-6 inline-flex items-center gap-1.5 text-xs font-bold text-muted hover:text-brand"><ArrowLeft size={14} /> Student workspace</Link>
-    <PageIntro eyebrow="Coding arena" title="Count it down." description="Practice tracing a loop, then write a function that counts from a starting value down to one.">
-      <Badge tone="gold">EXECUTION DISABLED · DEMO</Badge>
-    </PageIntro>
+    <PageIntro eyebrow="Coding arena" title="Count it down." description="Practice tracing a loop, then write a function that counts from a starting value down to one." />
     <div className="grid gap-5 xl:grid-cols-[330px_1fr]">
       <aside className="space-y-4">
         <SectionCard>
@@ -28,6 +26,6 @@ export default function ArenaPage() {
       </aside>
       <section aria-label="Code editor and results"><CodeEditor /></section>
     </div>
-    <p className="mt-4 rounded-xl border border-[#e6e9df] bg-[#fffaf0] px-4 py-3 text-xs leading-5 text-[#776441]">This editor is for writing only. Run and submit controls report the provider state; this app does not execute code in your browser or on its server.</p>
+    <p className="mt-4 rounded-xl border border-[#e6e9df] bg-[#fffaf0] px-4 py-3 text-xs leading-5 text-[#776441]">Use <strong>Run code</strong> to send your source to the server execution API. It runs only when an execution provider is configured. This starter does not run hidden tests or save submissions.</p>
   </PageLayout>;
 }

@@ -66,6 +66,8 @@ export interface CodeExecutionResult {
   status: "completed" | "failed" | "queued";
   stdout: string;
   stderr: string;
+  /** Provider-classified execution failure, when the provider supplies this detail. */
+  failureKind?: "compile-error" | "runtime-error" | "timeout";
   durationMs?: number;
   provider: string;
 }
