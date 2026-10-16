@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { createAnimationLoop } from "./animation-loop";
+import { getCursorPosition, getStarCursorOffset, getStarTwinkle } from "./starfield-animation";
 
 type Star = {
   x: number;
@@ -15,6 +16,8 @@ type Star = {
   color: string;
   blur: number;
   glint: boolean;
+  cursorOffsetX: number;
+  cursorOffsetY: number;
 };
 
 const STAR_COUNT = 800;
@@ -68,6 +71,8 @@ function createStars(width: number, height: number): Star[] {
       color: pickColor(),
       blur: Math.random() < 0.2 ? 2 + Math.random() * 7 : 0,
       glint: index < 8,
+      cursorOffsetX: 0,
+      cursorOffsetY: 0,
     };
   });
 }
@@ -85,6 +90,7 @@ export default function HeroSculptureCanvas() {
     let height = 0;
     let pixelRatio = 1;
     let stars: Star[] = [];
+    let cursorPosition: { x: number; y: number } | null = null;
     const startTime = performance.now();
 
     const draw = (timestamp: number) => {
@@ -104,15 +110,21 @@ export default function HeroSculptureCanvas() {
       const rotation = motionQuery.matches
         ? 0
         : -(ambientTime / 1000) * (Math.PI / 180) * 0.3;
-      const sine = motionQuery.matches ? 0 : timestamp / 1000;
       context.save();
       context.translate(centerX, centerY);
       context.rotate(rotation);
       context.translate(-centerX, -centerY);
       for (const star of stars) {
-        const x = star.x + (star.targetX - star.x) * ease;
-        const y = star.y + (star.targetY - star.y) * ease;
-        const twinkle = motionQuery.matches ? 1 : 0.72 + Math.sin(sine * star.speed + star.phase) * 0.2;
+        const baseX = star.x + (star.targetX - star.x) * ease;
+        const baseY = star.y + (star.targetY - star.y) * ease;
+        const cursorOffset = cursorPosition && !motionQuery.matches
+          ? getStarCursorOffset(baseX, baseY, cursorPosition.x, cursorPosition.y, 190, 14 + star.size * 0.7)
+          : { x: 0, y: 0 };
+        star.cursorOffsetX += (cursorOffset.x - star.cursorOffsetX) * 0.16;
+        star.cursorOffsetY += (cursorOffset.y - star.cursorOffsetY) * 0.16;
+        const x = baseX + star.cursorOffsetX;
+        const y = baseY + star.cursorOffsetY;
+        const twinkle = motionQuery.matches ? 1 : getStarTwinkle(timestamp, star.speed, star.phase);
         context.globalAlpha = star.opacity * twinkle;
         context.fillStyle = star.color;
         if (star.blur > 0) {
@@ -171,7 +183,7 @@ export default function HeroSculptureCanvas() {
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       stars = createStars(width, height);
       resizePending = false;
-      draw(performance.now());
+      draw(document.hidden ? startTime + INTRO_DURATION : performance.now());
     };
 
     const animationLoop = createAnimationLoop({
@@ -183,6 +195,9 @@ export default function HeroSculptureCanvas() {
       },
     });
     const onMotionChange = () => {
+      if (motionQuery.matches) {
+        cursorPosition = null;
+      }
       if (!document.hidden) draw(performance.now());
       animationLoop.wake();
     };
@@ -194,11 +209,24 @@ export default function HeroSculptureCanvas() {
         animationLoop.wake();
       }
     };
+    const onPointerMove = (event: PointerEvent) => {
+      if (motionQuery.matches) {
+        cursorPosition = null;
+        return;
+      }
+      const cursor = getCursorPosition(event.clientX, event.clientY, canvas.getBoundingClientRect());
+      cursorPosition = cursor;
+    };
+    const onPointerLeave = () => {
+      cursorPosition = null;
+    };
     const observer = new ResizeObserver(resizeAndPaint);
 
     resizeAndPaint();
     observer.observe(canvas);
     window.addEventListener("resize", resizeAndPaint);
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerleave", onPointerLeave);
     document.addEventListener("visibilitychange", onVisibilityChange);
     motionQuery.addEventListener("change", onMotionChange);
     animationLoop.start();
@@ -207,6 +235,8 @@ export default function HeroSculptureCanvas() {
       animationLoop.stop();
       observer.disconnect();
       window.removeEventListener("resize", resizeAndPaint);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerleave", onPointerLeave);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       motionQuery.removeEventListener("change", onMotionChange);
     };
