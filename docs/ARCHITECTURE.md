@@ -14,12 +14,12 @@ src/
     {arena,assessment,student,teacher}/page.tsx
     globals.css  layout.tsx  page.tsx
   components/
-    assessments/  coding/  layout/  learning/  student/  teacher/  ui/
+    assessments/  auth/  coding/  layout/  learning/  student/  teacher/  ui/
   config/learning.ts
   data/concepts/notes.json  demo-class.ts  demo-learning.ts
   features/
     adaptive-learning/  ai-mentor/  assessments/  code-execution/
-    rag/  teacher-analytics/
+    rag/  teacher-analytics/  teacher-portal/
   lib/
     auth/  execution/  supabase/
   types/{api,domain}.ts
@@ -36,6 +36,8 @@ docs/
 - `features/viva` generates questions from the submitted loop condition, parameter, return expression, and accumulator identifier, and evaluates explanations locally. The arena reveals viva questions on Submit regardless of hidden-test results or provider availability, so learners can still explain a solution when billable execution is disabled. Its `VivaEvaluation.evaluatedBy` remains `heuristic`; the viva route does not send learner source to Gemini or any external API. Viva mastery is counted once per learner and mission, with a unique Supabase claim or atomic local-file claim.
 - `features/rag` searches a local JSON note set using deterministic keyword overlap. `features/ai-mentor` combines retrieved notes with a separate heuristic suggestion. No Gemini adapter is connected.
 - `features/teacher-analytics` summarizes snapshots; the dashboard currently supplies an explicitly labelled sample cohort.
+- `features/teacher-portal` creates deterministic cloze-question drafts from teacher-entered text, tracks question difficulty, and recommends a level from the learner's latest same-topic result. `AssignmentStudio` and `PublishedAssignments` currently persist via browser `localStorage` only; this is a same-browser prototype, not shared or private classroom storage. The teacher reviews and publishes drafts; answer keys are therefore visible to a user with browser access and must move server-side before real student data is used.
+- `lib/auth` provides Supabase email/password role checks for the student and teacher workspaces when Supabase is configured. Without Supabase, workspaces are demo routes and assignment data remains browser-local.
 - `types/domain.ts` contains shared contracts for concepts, mastery, missions, assessments, execution, mentoring, replay signals, and viva. `types/api.ts` defines the standard response envelope.
 - Supabase clients use the public anonymous key only. No service-role key is read by the app. The learner mastery table is scoped by the cookie learner UUID in a request header; this demo identity is not authentication and must not be used to protect sensitive data.
 
@@ -43,12 +45,12 @@ docs/
 
 Assessment scoring and mastery updates happen on the server. The mastery probabilities are illustrative and no assessment-attempt history is retained. Supabase mastery persistence requires the checked-in migrations; without Supabase configuration, mastery and viva-attempt claims are written to local ignored JSON files. Arena execution sends submitted source to JDoodle only after explicit server-side opt-in and applies a 12-second request timeout. Do not enable public execution for an internet-facing deployment until authenticated access and deployment-backed rate/quota controls are implemented. Credentials and hidden test definitions stay server-side.
 
-The mastery migration enables RLS and limits anonymous row access to the learner UUID sent by the server. This is only a demo-level partitioning mechanism: a user who can forge the anonymous learner ID is not authenticated. Add real Supabase Auth and ownership-based RLS before treating learner records as private or connecting teacher/student identities.
+The mastery migration enables RLS and limits anonymous row access to the learner UUID sent by the server. This is only a demo-level partitioning mechanism: a user who can forge the anonymous learner ID is not authenticated. Although workspace routes check Supabase roles when configured, assignment authoring, publishing, answer keys, and submissions are currently localStorage data and do not have server-side ownership or RLS. Do not use this prototype for private classroom records until assignment persistence, answer evaluation, and ownership-based RLS move to the server.
 
 ## Next implementation boundaries
 
-1. Add Supabase Auth flows and server-side role checks, then replace sample dashboard data with ownership-scoped queries.
-2. Add a persistent assessment-attempt model and RLS tests.
-3. Add authenticated access and deployment-backed rate/quota limits before enabling JDoodle execution outside a controlled demo.
-4. Add Gemini server integration behind the mentor provider contract and preserve the deterministic fallback.
-5. Add event capture/replay and viva experiences only after consent, retention, and review behavior are specified.
+1. Move teacher content, questions, published assignments, and submissions into Supabase tables with teacher/student ownership policies.
+2. Add server-side question evaluation, persistent assessment attempts, and RLS tests.
+3. Provision and verify student/teacher identities with authenticated ownership-scoped workspace queries.
+4. Add authenticated access and deployment-backed rate/quota limits before enabling JDoodle execution outside a controlled demo.
+5. Add Gemini server integration behind the mentor provider contract and preserve the deterministic fallback.

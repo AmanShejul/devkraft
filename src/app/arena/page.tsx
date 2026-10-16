@@ -14,7 +14,7 @@ export default function ArenaPage() {
     <Link href="/student" className="mb-6 inline-flex items-center gap-1.5 text-xs font-bold text-muted hover:text-brand"><ArrowLeft size={14} /> Student workspace</Link>
     <PageIntro eyebrow="Coding arena" title="Count it down." description="Practice tracing a loop, then write a function that counts from a starting value down to one." />
     <div className="grid gap-5 xl:grid-cols-[330px_1fr]">
-      <aside className="space-y-4">
+      <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
         <SectionCard>
           <Badge>LOOPS · STARTER</Badge>
           <h2 className="mt-4 text-lg font-bold text-ink">The challenge</h2>

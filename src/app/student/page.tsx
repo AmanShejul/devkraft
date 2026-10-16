@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowRight, Check, Code2, FileText } from "lucide-react";
 import { PageIntro, PageLayout } from "@/components/layout/page-layout";
 import { Badge } from "@/components/ui/badge";
+import { SplitReveal } from "@/components/ui/text-animation";
 import { SectionCard } from "@/components/ui/section-card";
 import { MasteryList } from "@/components/student/mastery-list";
 import { MissionCard } from "@/components/student/mission-card";
@@ -11,10 +12,13 @@ import { DEMO_MASTERY, DEMO_MISSIONS, DEMO_RECENT_ACTIVITY } from "@/data/demo-l
 import { CONCEPT_GRAPH, selectNextMission } from "@/features/adaptive-learning";
 import { LEARNING_CONFIG } from "@/config/learning";
 import { getCurrentLearnerId, getLearnerMastery } from "@/features/assessments/mastery-store";
+import { requireWorkspaceRole } from "@/lib/auth/require-workspace-role";
+import { PublishedAssignments } from "@/components/student/published-assignments";
 
 export const metadata: Metadata = { title: "Student workspace" };
 
 export default async function StudentPage() {
+  await requireWorkspaceRole("student");
   const learnerId = await getCurrentLearnerId();
   const savedMastery = learnerId ? await getLearnerMastery(learnerId) : null;
   const hasSavedMastery = Boolean(savedMastery?.length);
@@ -29,10 +33,11 @@ export default async function StudentPage() {
 
   return (
     <PageLayout>
-      <PageIntro eyebrow="Student workspace" title="Good to see you, learner." description="A clear view of what you have practiced and a useful next step to keep your momentum." >
+      <PageIntro eyebrow="Student workspace" title={<SplitReveal as="span" className="inline" >Good to see you, learner.</SplitReveal>} description="A clear view of what you have practiced and a useful next step to keep your momentum." >
         <Badge tone="gold">{hasSavedMastery ? "SAVED LEARNER PROGRESS" : "DEMO DATA · SAMPLE LEARNER"}</Badge>
       </PageIntro>
       <div className="space-y-5">
+        <PublishedAssignments />
         <ProgressSummary />
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-5">

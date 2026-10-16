@@ -8,6 +8,9 @@ const config: Config = {
         ink: "var(--ink)",
         muted: "var(--muted)",
         canvas: "var(--canvas)",
+        panel: "var(--panel)",
+        "panel-raised": "var(--panel-raised)",
+        line: "var(--line)",
         brand: {
           DEFAULT: "var(--brand)",
           dark: "var(--brand-dark)",
@@ -16,7 +19,11 @@ const config: Config = {
         sun: "var(--sun)",
       },
       boxShadow: { card: "none" },
-      fontFamily: { sans: ["var(--font-manrope)", "Arial", "sans-serif"] },
+      fontFamily: {
+        sans: ["var(--font-manrope)", "Arial", "sans-serif"],
+        display: ["var(--font-display)", "var(--font-manrope)", "Arial", "sans-serif"],
+        mono: ["var(--font-mono)", "monospace"],
+      },
     },
   },
   plugins: [],

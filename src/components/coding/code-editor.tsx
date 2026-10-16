@@ -1,15 +1,18 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { motion } from "framer-motion";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { OnMount } from "@monaco-editor/react";
 import type { IDisposable } from "monaco-editor";
-import { Play, Send, Settings2 } from "lucide-react";
+import { Check, Play, Send, Settings2 } from "lucide-react";
 import type { ApiResponse } from "@/types/api";
 import { isCodeExecutionResult, type CodeExecutionRequest, type CodeExecutionResult, type SessionEvent, type VivaEvaluation, type VivaQuestion } from "@/types/domain";
 import type { CountDownTestResult } from "@/features/code-execution/count-down-tests";
 import { prepareVivaForSubmit } from "@/features/viva/viva";
 import { SessionReplay } from "@/components/coding/session-replay";
+import { MagneticButton } from "@/components/ui/magnetic-button";
+import { AnimatedNumber } from "@/components/ui/text-animation";
 
 const Monaco = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -407,15 +410,15 @@ export function CodeEditor() {
   const hasError = errorCode !== undefined;
 
   return <div className="space-y-5">
-    <div className="overflow-hidden rounded-[22px] border border-[var(--line)] bg-[var(--panel)] shadow-card" onPasteCapture={() => {
+    <div className="overflow-hidden rounded-[22px] border border-brand/20 bg-[var(--panel)] shadow-[0_22px_80px_rgba(0,0,0,.24)] before:block before:h-px before:bg-gradient-to-r before:from-transparent before:via-brand/70 before:to-transparent" onPasteCapture={() => {
       pastePending.current = true;
       queueMicrotask(() => { pastePending.current = false; });
     }}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-      <div className="flex items-center gap-2"><span className="size-2 rounded-full bg-[#e6b657]" /><span className="text-xs font-bold text-white/85">solution</span><span className="text-xs text-white/40">/</span><label htmlFor="language" className="sr-only">Editor language</label><select id="language" value={language} disabled={pending} onChange={(event) => changeLanguage(event.target.value as CodeExecutionRequest["language"])} className="rounded-lg border border-white/10 bg-[#18262e] px-2.5 py-1.5 text-xs font-semibold text-white/80 disabled:opacity-60"><option value="typescript">TypeScript</option><option value="javascript">JavaScript</option><option value="python">Python</option></select></div>
-      <div className="flex items-center gap-2"><span title="Provider status" className="inline-flex items-center gap-1.5 text-[11px] text-[#e8bd64]"><Settings2 size={13} /> {providerReady ? "Provider ready" : "Provider not configured"}</span><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-60"><Play size={13} fill="currentColor" /> Run</button><button type="button" onClick={() => void requestExecution("submit")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-white/85 hover:bg-white/10 disabled:opacity-60"><Send size={13} /> Submit</button><button type="button" onClick={() => void requestExecution("hostile")} disabled={pending} className="rounded-lg border border-[#e8bd64]/40 px-2 py-2 text-[10px] font-semibold text-[#e8bd64] hover:bg-white/10 disabled:opacity-60">Try hostile input</button></div>
+      <div className="flex items-center gap-3"><span className="flex items-center gap-1.5" aria-hidden="true"><i className="size-2 rounded-full bg-[#ff6b62]" /><i className="size-2 rounded-full bg-[#f4bd4f]" /><i className="size-2 rounded-full bg-[#55c86a]" /></span><span className="text-xs font-bold text-white/85">solution</span><span className="text-xs text-white/40">/</span><label htmlFor="language" className="sr-only">Editor language</label><select id="language" value={language} disabled={pending} onChange={(event) => changeLanguage(event.target.value as CodeExecutionRequest["language"])} className="rounded-lg border border-white/10 bg-[#18262e] px-2.5 py-1.5 text-xs font-semibold text-white/80 disabled:opacity-60"><option value="typescript">TypeScript</option><option value="javascript">JavaScript</option><option value="python">Python</option></select></div>
+      <div className="flex items-center gap-2"><span title="Provider status" className="hidden items-center gap-1.5 text-[11px] text-[#e8bd64] sm:inline-flex"><Settings2 size={13} /> {providerReady ? "Provider ready" : "Provider not configured"}</span><MagneticButton><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className={`relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-60 ${pending ? "animate-pulse" : ""}`}>{pending && <span className="absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-white/35 animate-[shimmer_1.2s_infinite]" />}<Play size={13} fill="currentColor" /> {pending ? "Running" : "Run"}</button></MagneticButton><MagneticButton><button type="button" onClick={() => void requestExecution("submit")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg border border-brand/45 px-3 py-2 text-xs font-bold text-white/85 hover:bg-brand/[.08] disabled:opacity-60"><Send size={13} /> Submit</button></MagneticButton><button type="button" onClick={() => void requestExecution("hostile")} disabled={pending} className="rounded-lg border border-[#e8bd64]/40 px-2 py-2 text-[10px] font-semibold text-[#e8bd64] hover:bg-white/10 disabled:opacity-60">Try hostile input</button></div>
     </div>
-    <div className="h-[390px]">
+    <div className="h-[390px] bg-[#10161a]">
       <Monaco height="390px" theme="vs-dark" language={language} value={sourceCode} onChange={(value) => changeSourceCode(value ?? "")} onMount={onEditorMount} options={{ minimap: { enabled: false }, readOnly: pending, fontSize: 13, tabSize: 2, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true, wordWrap: "on", lineNumbersMinChars: 3 }} />
     </div>
     <div className="grid gap-0 border-t border-white/10 md:grid-cols-[0.8fr_1.2fr]">
@@ -423,7 +426,7 @@ export function CodeEditor() {
       <div className="p-4"><div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/45">Run result</span><span className="text-[10px] text-white/35">{execution ? `${execution.durationMs ?? "—"} ms` : pending ? "Waiting for API" : "No execution"}</span></div>
         <p role={hasError ? "alert" : "status"} aria-live="polite" className="mt-2 text-xs leading-5 text-[#e8bd64]">{message}{errorCode ? <span className="ml-1 text-white/45">({errorCode})</span> : null}</p>
         {submission && <div aria-label="Hidden test results" className="mt-3 flex flex-wrap gap-2">
-          {submission.cases.map((testCase, index) => <span key={testCase.caseId} className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${testCase.passed ? "border-[#338f75]/50 bg-[#174b40] text-[#9ae0c8]" : "border-[#b35c53]/50 bg-[#542c2a] text-[#ffb3aa]"}`}>Case {index + 1}: {testCase.passed ? "Pass" : "Fail"}</span>)}
+          {submission.cases.map((testCase, index) => <motion.span key={testCase.caseId} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 220, damping: 18, delay: index * 0.07 }} className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${testCase.passed ? "border-[#338f75]/50 bg-[#174b40] text-[#9ae0c8]" : "border-[#b35c53]/50 bg-[#542c2a] text-[#ffb3aa]"}`}>{testCase.passed ? <Check size={11} className="mr-1 inline" /> : null}Case {index + 1}: {testCase.passed ? "Pass" : <details className="ml-1 inline"><summary className="inline cursor-pointer">Fail</summary><span className="ml-2 font-normal">Expected output differs for {testCase.caseId}.</span></details>}</motion.span>)}
         </div>}
         {vivaQuestions.length > 0 && <section aria-labelledby="viva-heading" className="mt-5 border-t border-white/10 pt-4">
           <h3 id="viva-heading" className="text-sm font-bold text-white/90">Now explain your solution</h3>
@@ -431,7 +434,7 @@ export function CodeEditor() {
           <form onSubmit={(formEvent) => void evaluateViva(formEvent)} className="mt-3 space-y-4">
             {vivaQuestions.map((question, index) => {
               const evaluation = vivaEvaluations.find((item) => item.questionId === question.id);
-              return <div key={question.id}>
+              return <div key={question.id} className="rounded-xl border-l-2 border-brand bg-white/[.025] p-3">
                 <label htmlFor={`viva-answer-${question.id}`} className="block text-xs font-semibold leading-5 text-white/85">{index + 1}. {question.prompt}</label>
                 <textarea
                   id={`viva-answer-${question.id}`}
@@ -443,7 +446,7 @@ export function CodeEditor() {
                   required
                   className="mt-2 w-full rounded-lg border border-white/15 bg-[#18262e] px-3 py-2 text-xs leading-5 text-white/85 outline-none focus:border-brand disabled:opacity-70"
                 />
-                {evaluation && <p className="mt-2 rounded-lg bg-white/5 px-3 py-2 text-xs leading-5 text-white/75"><strong>{evaluation.score.toFixed(1)} · Heuristic feedback:</strong> {evaluation.feedback}</p>}
+                {evaluation && <p className="mt-2 rounded-lg bg-brand/[.07] px-3 py-2 text-xs leading-5 text-white/75"><strong><AnimatedNumber value={evaluation.score * 100} suffix="%" /> · Heuristic feedback:</strong> {evaluation.feedback}</p>}
               </div>;
             })}
             {vivaEvaluations.length === 0 && <button type="submit" disabled={pending || vivaQuestions.some((question) => !vivaAnswers[question.id]?.trim())} className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-50">Evaluate explanations</button>}
@@ -465,6 +468,7 @@ export function CodeEditor() {
           : <p className="mt-2 text-xs text-white/50">Provider returned no output.</p>)}
       </div>
     </div>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#10161a] px-4 py-2 text-[10px] uppercase tracking-[.12em] text-white/35"><span>{sourceCode.length.toLocaleString()} chars</span><span>{language}</span><span className="text-[#e8bd64]">{providerReady ? "Provider ready" : "Provider not configured"}</span></div>
     </div>
     {timelineError && <p role="status" className="rounded-xl border border-[#725b36] bg-[#292318] px-4 py-3 text-xs text-[#e8d4ad]">{timelineError}</p>}
     <SessionReplay key={sessionId} sessionId={sessionId || "loading"} events={timeline} onStartNewAttempt={startNewAttempt} />

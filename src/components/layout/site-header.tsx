@@ -7,9 +7,9 @@ import { useState } from "react";
 import { SkillPathLogo } from "@/components/layout/skillpath-logo";
 
 const links = [
-  { href: "/student", label: "Student" },
+  { href: "/login/student", label: "Student login" },
   { href: "/learn", label: "Learning path" },
-  { href: "/teacher", label: "Teacher" },
+  { href: "/login/teacher", label: "Teacher login" },
   { href: "/assessment", label: "Assessment" },
   { href: "/arena", label: "Coding arena" },
 ];
@@ -17,7 +17,7 @@ const links = [
 export function SiteHeader() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  if (pathname === "/") return null;
+  if (pathname === "/" || pathname.startsWith("/login/")) return null;
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-canvas/95 backdrop-blur">
       <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-5 px-5 sm:px-8">

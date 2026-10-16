@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { motion } from "framer-motion";
 import { ArrowRight, CircleHelp } from "lucide-react";
 import { CONCEPT_GRAPH } from "@/features/adaptive-learning";
 import { SectionCard } from "@/components/ui/section-card";
@@ -15,9 +18,9 @@ export function MasteryList({ mastery }: { mastery: readonly ConceptMastery[] })
       <div className="mt-5 space-y-4">
         {CONCEPT_GRAPH.map((concept) => {
           const percent = Math.round((byId.get(concept.id) ?? 0) * 100);
-          return <div key={concept.id}>
-            <div className="mb-1.5 flex items-baseline justify-between gap-3"><span className="text-sm font-semibold text-ink">{concept.title}</span><span className="text-xs font-bold text-muted">{percent}%</span></div>
-            <div className="h-2 overflow-hidden rounded-full bg-[var(--line)]" role="progressbar" aria-label={`${concept.title} mastery`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><div className={`h-full rounded-full ${percent >= 65 ? "bg-brand" : "bg-[#d7aa4d]"}`} style={{ width: `${percent}%` }} /></div>
+          return <div key={concept.id} className="group rounded-xl px-2 py-2 transition hover:bg-white/[.03]" title={`Why: ${mastery.find((item) => item.conceptId === concept.id)?.updatedAt ? "latest saved estimate" : "illustrative sample estimate"}. Exact mastery is ${percent}%.`}>
+            <div className="mb-1.5 flex items-baseline justify-between gap-3"><span className="text-sm font-semibold text-ink">{concept.title}</span><span className="text-xs font-bold text-muted">{percent}% <span className="ml-1 text-brand/70">{percent >= 65 ? "↗" : "→"}</span></span></div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--line)]" role="progressbar" aria-label={`${concept.title} mastery`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><motion.div className={`h-full rounded-full ${percent >= 65 ? "bg-brand" : "bg-[#d7aa4d]"}`} initial={{ width: 0 }} animate={{ width: `${percent}%` }} transition={{ type: "spring", stiffness: 120, damping: 20, delay: concept.id.length * 0.02 }} /></div>
           </div>;
         })}
       </div>

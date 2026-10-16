@@ -5,6 +5,8 @@
 :root {
   color-scheme: dark;
   --font-manrope: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  --font-display: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --canvas: #060709;
   --ink: #f5f2ea;
   --foreground-on-dark: #f5f2ea;
@@ -16,6 +18,8 @@
   --panel: #181d22;
   --panel-raised: #1f2429;
   --line: #2b3239;
+  --line-soft: rgba(255, 255, 255, 0.1);
+  --cream: #f5f2ea;
 }
 
 * { box-sizing: border-box; }
@@ -34,11 +38,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   outline: 2px solid var(--sun);
   outline-offset: 3px;
 }
-pre, code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+pre, code { font-family: var(--font-mono); }
 
 @layer components {
   .surface { border: 1px solid var(--line); background: var(--panel); }
+  .surface-card { border: 1px solid var(--line); background: linear-gradient(145deg, rgba(31, 36, 41, .82), rgba(24, 29, 34, .96)); }
   .eyebrow { @apply text-[10px] font-bold uppercase tracking-[.2em] text-white/40; }
+}
+
+.noise-overlay { position: relative; isolation: isolate; }
+.noise-overlay::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: "";
+  opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
+  mix-blend-mode: screen;
 }
 
   a.bg-white {
@@ -75,6 +92,10 @@ pre, code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 @keyframes hero-star-twinkle {
   from { opacity: .12; transform: scale(.55); }
   to { opacity: 1; transform: scale(1.35); }
+}
+@keyframes shimmer {
+  from { transform: translateX(-20%); }
+  to { transform: translateX(300%); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
+import { SectionHeading } from "@/components/ui/section-heading";
 
 export function PageLayout({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <main className={`mx-auto min-h-[calc(100vh-72px)] max-w-[1400px] bg-canvas px-5 py-8 text-white sm:px-8 sm:py-10 lg:px-12 ${className}`}>{children}</main>;
+  return <main className={`mx-auto min-h-[calc(100vh-72px)] max-w-7xl bg-canvas px-5 py-10 text-white sm:px-8 sm:py-12 lg:px-10 ${className}`}>{children}</main>;
 }
 
 export function PageIntro({
@@ -11,17 +12,13 @@ export function PageIntro({
   children,
 }: {
   eyebrow?: string;
-  title: string;
+  title: ReactNode;
   description?: string;
   children?: ReactNode;
 }) {
   return (
     <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-      <div>
-        {eyebrow && <p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-brand">{eyebrow}</p>}
-        <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-[38px]">{title}</h1>
-        {description && <p className="mt-2 max-w-2xl text-sm leading-6 text-muted sm:text-base">{description}</p>}
-      </div>
+      <SectionHeading eyebrow={eyebrow} title={title} description={description} titleAs="h1" />
       {children}
     </div>
   );

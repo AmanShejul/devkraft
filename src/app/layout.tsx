@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/layout/site-header";
+import { PageTransition } from "@/components/layout/page-transition";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +14,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         <SiteHeader />
-        {children}
+        <PageTransition>{children}</PageTransition>
       </body>
     </html>
   );

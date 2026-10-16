@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 import type { IntegritySignal, SessionEvent } from "@/types/domain";
 import { deriveIntegritySignals } from "@/features/integrity/signals";
 
@@ -52,7 +53,7 @@ export function SessionReplay({ sessionId, events, onStartNewAttempt }: SessionR
     if (matchingIndex >= 0) setSelectedIndex(matchingIndex);
   }
 
-  return <section aria-label="Session replay" className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-card sm:p-6">
+  return <section aria-label="Session replay" className="noise-overlay rounded-2xl border border-white/10 bg-[#12171a] p-5 shadow-card sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 className="text-lg font-bold text-ink">Session timeline</h2>
@@ -70,15 +71,19 @@ export function SessionReplay({ sessionId, events, onStartNewAttempt }: SessionR
         key={`${signal.kind}-${signal.occurredAt}`}
         type="button"
         onClick={() => jumpToSignal(signal)}
-        className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#725b36] bg-[#292318] px-3 py-2 text-left text-xs text-[#e8d4ad] hover:bg-[#352d1e]"
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#b35c53]/45 bg-[#3b211f]/70 px-3 py-2 text-left text-xs text-[#f0c0b8] hover:bg-[#4a2724]"
       >
-        <span><strong>Flagged for review:</strong> {signalLabel(signal.kind)}</span>
+        <span><strong>Flagged for review:</strong> {signalLabel(signal.kind)} <span className="ml-2 text-[10px] text-[#ffb3aa]">Jump to moment</span></span>
         <time dateTime={signal.occurredAt} className="shrink-0">{formatTimestamp(signal.occurredAt)}</time>
       </button>)}
     </div>}
 
     {events.length > 0 ? <>
       <label htmlFor="timeline-scrubber" className="mt-5 block text-xs font-bold text-ink">Replay position</label>
+      <div className="relative mt-3 h-5">
+        <div className="absolute inset-x-0 top-2 h-px bg-white/15" aria-hidden="true" />
+        {events.map((event, index) => <motion.button key={event.id} type="button" aria-label={`Jump to ${event.kind} event ${index + 1}`} onClick={() => setSelectedIndex(index)} className={`absolute top-0 size-4 -translate-x-1/2 rounded-full border-2 border-[#12171a] ${event.kind === "run" ? "bg-brand" : event.kind === "submit" ? "bg-[#67c9a2]" : event.kind === "focus-change" ? "bg-[#d66a5d]" : "bg-white/40"} ${index === activeIndex ? "ring-2 ring-brand/40" : ""}`} style={{ left: `${events.length === 1 ? 0 : (index / (events.length - 1)) * 100}%` }} />)}
+      </div>
       <input
         id="timeline-scrubber"
         aria-label="Replay position"
@@ -87,7 +92,7 @@ export function SessionReplay({ sessionId, events, onStartNewAttempt }: SessionR
         max={events.length - 1}
         value={activeIndex}
         onChange={(event) => setSelectedIndex(Number(event.target.value))}
-        className="mt-2 w-full accent-[#e8b96a]"
+        className="sr-only"
       />
       {selectedEvent && <p className="mt-2 text-xs text-muted"><time dateTime={selectedEvent.occurredAt}>{formatTimestamp(selectedEvent.occurredAt)}</time> · {eventDescription(selectedEvent)}</p>}
       <ol className="mt-4 max-h-56 space-y-1.5 overflow-auto">
