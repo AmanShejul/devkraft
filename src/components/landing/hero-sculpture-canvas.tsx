@@ -1,0 +1,14 @@
+"use client";
+
+import { Canvas, useFrame } from "@react-three/fiber";
+import { useReducedMotion } from "framer-motion";
+import { useMemo, useRef } from "react";
+import * as THREE from "three";
+
+const points = [new THREE.Vector3(-2.8, -1.8, 0), new THREE.Vector3(-1.9, -.8, .2), new THREE.Vector3(-1.1, -.6, 0), new THREE.Vector3(-.7, .55, .25), new THREE.Vector3(.4, .65, 0), new THREE.Vector3(.85, 1.55, -.15), new THREE.Vector3(2.1, 1.8, .1)];
+
+function Branch({ start, end }: { start: THREE.Vector3; end: THREE.Vector3 }) { const curve = useMemo(() => new THREE.LineCurve3(start, end), [start, end]); return <mesh><tubeGeometry args={[curve, 12, .025, 6, false]} /><meshStandardMaterial color="#777" metalness={.95} roughness={.25} /></mesh>; }
+
+function Sculpture() { const group = useRef<THREE.Group>(null); const reduced = useReducedMotion(); const curve = useMemo(() => new THREE.CatmullRomCurve3(points, false, "catmullrom", .18), []); const samples = useMemo(() => curve.getPoints(32), [curve]); useFrame((state, delta) => { if (!group.current) return; const x = reduced ? .14 : state.pointer.y * -.08; const y = reduced ? -.2 : state.pointer.x * .12 + state.clock.elapsedTime * .055; group.current.rotation.x = THREE.MathUtils.damp(group.current.rotation.x, x, 3, delta); group.current.rotation.y = THREE.MathUtils.damp(group.current.rotation.y, y, 3, delta); }); return <group ref={group} rotation={[.14, -.2, -.08]} scale={1.15}><mesh><tubeGeometry args={[curve, 128, .14, 16, false]} /><meshPhysicalMaterial color="#b8b8b8" metalness={.98} roughness={.2} clearcoat={1} clearcoatRoughness={.15} /></mesh><mesh><tubeGeometry args={[curve, 128, .19, 16, false]} /><meshBasicMaterial color="#000" side={THREE.BackSide} /></mesh>{samples.filter((_, i) => i % 8 === 0).map((point, i) => <mesh key={i} position={point}><icosahedronGeometry args={[i === 0 || i === 4 ? .22 : .13, 2]} /><meshPhysicalMaterial color="#c8c8c8" metalness={1} roughness={.16} clearcoat={1} /></mesh>)}<Branch start={points[1]} end={new THREE.Vector3(-2.5, .35, .15)} /><Branch start={points[3]} end={new THREE.Vector3(-1.8, 1.4, -.2)} /><Branch start={points[4]} end={new THREE.Vector3(1.25, -.75, .25)} /><Branch start={points[5]} end={new THREE.Vector3(1.65, 2.65, -.15)} /></group>; }
+
+export default function HeroSculptureCanvas() { return <Canvas dpr={[1, 1.5]} camera={{ position: [0, 0, 7], fov: 33 }} gl={{ antialias: true, powerPreference: "high-performance" }} fallback={<div className="grid h-full place-items-center text-xs text-white/40">WebGL preview unavailable</div>}><color attach="background" args={["#050505"]} /><fog attach="fog" args={["#050505", 5, 14]} /><ambientLight intensity={.5} /><directionalLight position={[-4, 4, 5]} intensity={3.5} /><directionalLight position={[4, -1, 2]} intensity={2.2} color="#87909b" /><pointLight position={[0, 0, 3]} intensity={6} distance={8} /><Sculpture /></Canvas>; }

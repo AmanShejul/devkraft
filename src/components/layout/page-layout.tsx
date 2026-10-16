@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export function PageLayout({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <main className={`mx-auto min-h-[calc(100vh-72px)] max-w-7xl px-5 py-8 sm:px-8 sm:py-10 ${className}`}>{children}</main>;
+  return <main className={`mx-auto min-h-[calc(100vh-72px)] max-w-[1400px] bg-black px-5 py-8 text-white sm:px-8 sm:py-10 lg:px-12 ${className}`}>{children}</main>;
 }
 
 export function PageIntro({

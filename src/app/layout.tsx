@@ -3,8 +3,8 @@ import { SiteHeader } from "@/components/layout/site-header";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "SkillPath | Your Skills. Your Path. Your Progress.", template: "%s | SkillPath" },
-  description: "A guided coding-learning workspace for practice, feedback, and steady progress.",
+  title: { default: "SkillPath — Learn with direction.", template: "%s | SkillPath" },
+  description: "A coding path shaped around what you know—and what you need next.",
   applicationName: "SkillPath",
 };
 

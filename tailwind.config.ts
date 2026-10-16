@@ -5,13 +5,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#172c35",
-        muted: "#687b82",
-        canvas: "#f5f8f6",
-        brand: { DEFAULT: "#177c68", dark: "#0e5e50", soft: "#e5f4ef" },
-        sun: "#f0b84a",
+        ink: "#f5f5f5",
+        muted: "#8f8f8f",
+        canvas: "#000000",
+        brand: { DEFAULT: "#ffffff", dark: "#ffffff", soft: "#1b1b1b" },
+        sun: "#c4c4c4",
       },
-      boxShadow: { card: "0 14px 42px rgba(23, 44, 53, 0.06)" },
+      boxShadow: { card: "none" },
       fontFamily: { sans: ["var(--font-manrope)", "Arial", "sans-serif"] },
     },
   },
