@@ -11,7 +11,7 @@ export function MissionCard({ mission }: { mission: LearningMission | null }) {
         <h2 className="mt-5 text-2xl font-extrabold tracking-tight">{mission?.title ?? "Choose a concept to practice"}</h2>
         <p className="mt-2 max-w-xl text-sm leading-6 text-white/70">{mission?.description ?? "Try an assessment to find a useful next step."}</p>
         <Link href="/arena" className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#f0c46a] px-4 py-2.5 text-sm font-bold text-ink transition hover:bg-[#f7d990]">Open practice space <ArrowRight size={16} /></Link>
-        <p className="mt-4 text-[11px] text-white/50">Mission choice is based on seeded demo mastery and prerequisites.</p>
+        <p className="mt-4 text-[11px] text-white/50">Mission choice is based on mastery estimates and prerequisites.</p>
       </div>
     </section>
   );

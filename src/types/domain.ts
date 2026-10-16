@@ -54,6 +54,7 @@ export interface AssessmentResult {
   completedAt: string;
   persistence: "demo" | "saved";
   answers: AssessmentQuestionResult[];
+  mastery: ConceptMastery[];
 }
 
 export interface CodeExecutionRequest {

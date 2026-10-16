@@ -4,6 +4,7 @@ import { updateMastery } from "@/features/adaptive-learning/bkt";
 import { selectNextMission } from "@/features/adaptive-learning/missions";
 import { LEARNING_CONFIG } from "@/config/learning";
 import { DEMO_MISSIONS } from "@/data/demo-learning";
+import { scoreAssessment } from "@/features/assessments";
 
 describe("concept prerequisites", () => {
   it("reports unmet prerequisites and opens a concept when they are mastered", () => {
@@ -23,6 +24,26 @@ describe("BKT mastery updates", () => {
 
   it("rejects invalid probability inputs", () => {
     expect(() => updateMastery(1.2, true, LEARNING_CONFIG.bkt)).toThrow(RangeError);
+  });
+
+  it("updates assessment mastery in opposite directions for correct and incorrect attempts", () => {
+    const correctAttempt = scoreAssessment([
+      { questionId: "variables-1", choiceId: "c" },
+      { questionId: "conditionals-1", choiceId: "a" },
+      { questionId: "loops-1", choiceId: "b" },
+    ]);
+    const incorrectAttempt = scoreAssessment([
+      { questionId: "variables-1", choiceId: "a" },
+      { questionId: "conditionals-1", choiceId: "b" },
+      { questionId: "loops-1", choiceId: "a" },
+    ], correctAttempt.mastery);
+
+    for (const conceptId of ["variables", "conditionals", "loops"]) {
+      const afterCorrect = correctAttempt.mastery.find((item) => item.conceptId === conceptId)!.probability;
+      const afterIncorrect = incorrectAttempt.mastery.find((item) => item.conceptId === conceptId)!.probability;
+      expect(afterCorrect).toBeGreaterThan(LEARNING_CONFIG.bkt.initialMastery);
+      expect(afterIncorrect).toBeLessThan(afterCorrect);
+    }
   });
 });
 

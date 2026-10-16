@@ -7,11 +7,11 @@ import { validateCodeExecutionRequest } from "./validation";
 
 export const MAX_EXECUTION_REQUEST_BYTES = 32 * 1024;
 
-type JsonBodyResult =
+export type JsonBodyResult =
   | { ok: true; data: unknown }
   | { ok: false; status: 400 | 413 | 415; error: ApiFailure };
 
-async function readBoundedJson(request: Request): Promise<JsonBodyResult> {
+export async function readBoundedJson(request: Request): Promise<JsonBodyResult> {
   const mediaType = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
   if (mediaType !== "application/json") {
     return { ok: false, status: 415, error: apiFailure("UNSUPPORTED_MEDIA_TYPE", "Send the request as application/json.") };

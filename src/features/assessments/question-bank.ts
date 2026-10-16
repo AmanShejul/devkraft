@@ -1,4 +1,6 @@
-import type { AssessmentAnswer, AssessmentQuestion, AssessmentResult } from "@/types/domain";
+import type { AssessmentAnswer, AssessmentQuestion, AssessmentResult, ConceptMastery } from "@/types/domain";
+import { LEARNING_CONFIG } from "@/config/learning";
+import { updateConceptMastery } from "@/features/adaptive-learning/bkt";
 
 interface BankQuestion extends AssessmentQuestion {
   correctChoiceId: string;
@@ -41,7 +43,11 @@ export function getPublicQuestions(): AssessmentQuestion[] {
   }));
 }
 
-export function scoreAssessment(answers: readonly AssessmentAnswer[], now = new Date()): AssessmentResult {
+export function scoreAssessment(
+  answers: readonly AssessmentAnswer[],
+  currentMastery: readonly ConceptMastery[] = [],
+  now = new Date(),
+): AssessmentResult {
   if (!Array.isArray(answers) || answers.length !== QUESTION_BANK.length) {
     throw new TypeError(`Submit exactly ${QUESTION_BANK.length} answers.`);
   }
@@ -50,11 +56,20 @@ export function scoreAssessment(answers: readonly AssessmentAnswer[], now = new 
   if (new Set(submittedIds).size !== submittedIds.length) throw new TypeError("Each question must be answered once.");
 
   const answerById = new Map(answers.map((answer) => [answer.questionId, answer.choiceId]));
+  const masteryByConcept = new Map(currentMastery.map((item) => [item.conceptId, item]));
   const results = QUESTION_BANK.map((question) => {
     const choiceId = answerById.get(question.id);
     if (!choiceId || !question.choices.some((choice) => choice.id === choiceId)) {
       throw new TypeError(`A valid choice is required for question ${question.id}.`);
     }
+    const previous = masteryByConcept.get(question.conceptId) ?? {
+      conceptId: question.conceptId,
+      probability: LEARNING_CONFIG.bkt.initialMastery,
+    };
+    masteryByConcept.set(
+      question.conceptId,
+      updateConceptMastery(previous, choiceId === question.correctChoiceId, LEARNING_CONFIG.bkt, now),
+    );
     return {
       questionId: question.id,
       correct: choiceId === question.correctChoiceId,
@@ -70,5 +85,6 @@ export function scoreAssessment(answers: readonly AssessmentAnswer[], now = new 
     completedAt: now.toISOString(),
     persistence: "demo",
     answers: results,
+    mastery: [...masteryByConcept.values()],
   };
 }

@@ -8,7 +8,8 @@ SkillPath uses a Next.js App Router application with TypeScript. UI lives under 
 src/
   app/
     api/assessments/{questions,submit}/route.ts
-    api/code/run/route.ts
+    api/code/{run,submit}/route.ts
+    api/viva/evaluate/route.ts
     api/mentor/hint/route.ts
     {arena,assessment,student,teacher}/page.tsx
     globals.css  layout.tsx  page.tsx
@@ -23,30 +24,31 @@ src/
     auth/  execution/  supabase/
   types/{api,domain}.ts
 tests/adaptive-learning.test.ts
-supabase/migrations/  # no persisted tables are needed by this demo slice
+supabase/migrations/  # learner mastery persistence
 docs/
 ```
 
 ## Boundaries
 
 - `features/adaptive-learning` owns the prerequisite graph, BKT update, and deterministic mission choice. It does not import React. The BKT parameters are illustrative and are not a validated learning model.
-- `features/assessments` owns the private answer key and scoring. The question endpoint returns only prompts and choices; correctness is checked in the server route. Demo attempts are not persisted.
-- `features/code-execution` owns bounded request parsing, validation, provider interface, timeout/error mapping, and orchestration. `lib/execution/jdoodle-provider.ts` implements the provider-independent interface with documented, pinned language mappings and combined-output semantics. `lib/execution/provider.ts` stays closed until authenticated access and distributed rate/quota controls are in place. Submitted code is never run by this app.
+- `features/assessments` owns the private answer key, scoring, per-answer BKT updates, and mastery persistence. The question endpoint returns only prompts and choices. Assessment mastery is keyed by an anonymous HTTP-only learner cookie and stored in Supabase or the ignored local `.data/` directory.
+- `features/code-execution` owns bounded request parsing, validation, provider interface, timeout/error mapping, orchestration, and the language-specific hidden `countDown` harness. `features/integrity` derives review signals from the exact shared session-event contracts. The arena records event metadata in browser memory and local storage; replay signals are evidence for human review, not verdicts. `lib/execution/jdoodle-provider.ts` implements the provider-independent interface with documented, pinned language mappings and combined-output semantics. The `JDOODLE_EXECUTION_ENABLED=true` server flag opts into provider execution; since routes currently lack authentication and distributed rate/quota controls, this is suitable only for controlled demos.
+- `features/viva` generates questions from the submitted loop condition, parameter, return expression, and accumulator identifier, and evaluates explanations locally. Its `VivaEvaluation.evaluatedBy` remains `heuristic`; the viva route does not send learner source to Gemini or any external API.
 - `features/rag` searches a local JSON note set using deterministic keyword overlap. `features/ai-mentor` combines retrieved notes with a separate heuristic suggestion. No Gemini adapter is connected.
 - `features/teacher-analytics` summarizes snapshots; the dashboard currently supplies an explicitly labelled sample cohort.
 - `types/domain.ts` contains shared contracts for concepts, mastery, missions, assessments, execution, mentoring, replay signals, and viva. `types/api.ts` defines the standard response envelope.
-- Supabase clients use the public anonymous key only. No service-role key is read by the app. Authentication and database persistence are not yet wired into the sample dashboards.
+- Supabase clients use the public anonymous key only. No service-role key is read by the app. The learner mastery table is scoped by the cookie learner UUID in a request header; this demo identity is not authentication and must not be used to protect sensitive data.
 
 ## Trust boundaries and persistence
 
-Assessment scoring happens on the server, but it is still demo data and does not create a durable attempt record. The code route has a typed unavailable response until an external executor is configured. Any future JDoodle or Judge0 adapter must keep credentials server-side, impose execution and resource limits, and return provider results without executing source in a Next.js process. Do not send hidden tests or provider secrets to client bundles.
+Assessment scoring and mastery updates happen on the server. The mastery probabilities are illustrative and no assessment-attempt history is retained. Supabase mastery persistence requires the checked-in migration; without Supabase configuration, the same data is written to local ignored JSON files. Arena execution sends submitted source to JDoodle only after explicit server-side opt-in and applies a 12-second request timeout. Do not enable public execution for an internet-facing deployment until authenticated access and deployment-backed rate/quota controls are implemented. Credentials and hidden test definitions stay server-side.
 
-There is no migration yet: none of the implemented screens requires durable data. Before connecting persistence, agree on user, class, enrollment, concept mastery, and assessment attempt ownership; then add migrations with restrictive RLS and verify access policies using separate student and teacher identities.
+The mastery migration enables RLS and limits anonymous row access to the learner UUID sent by the server. This is only a demo-level partitioning mechanism: a user who can forge the anonymous learner ID is not authenticated. Add real Supabase Auth and ownership-based RLS before treating learner records as private or connecting teacher/student identities.
 
 ## Next implementation boundaries
 
 1. Add Supabase Auth flows and server-side role checks, then replace sample dashboard data with ownership-scoped queries.
 2. Add a persistent assessment-attempt model and RLS tests.
-3. Add an execution provider adapter after credentials, limits, timeouts, and failure cases are confirmed.
+3. Add authenticated access and deployment-backed rate/quota limits before enabling JDoodle execution outside a controlled demo.
 4. Add Gemini server integration behind the mentor provider contract and preserve the deterministic fallback.
 5. Add event capture/replay and viva experiences only after consent, retention, and review behavior are specified.

@@ -159,9 +159,20 @@ describe("JDoodle execution provider", () => {
     });
   });
 
-  it("keeps the configured provider factory closed until route access controls exist", () => {
+  it("keeps execution disabled unless the explicit server environment flag is enabled", () => {
     vi.stubEnv("JDOODLE_CLIENT_ID", credentials.clientId);
     vi.stubEnv("JDOODLE_CLIENT_SECRET", credentials.clientSecret);
+    vi.stubEnv("JDOODLE_EXECUTION_ENABLED", "false");
+    expect(getCodeExecutionProvider()).toBeNull();
+
+    vi.stubEnv("JDOODLE_EXECUTION_ENABLED", "true");
+    expect(getCodeExecutionProvider()).toMatchObject({ id: "jdoodle" });
+  });
+
+  it("requires server-side credentials even when execution is enabled", () => {
+    vi.stubEnv("JDOODLE_EXECUTION_ENABLED", "true");
+    vi.stubEnv("JDOODLE_CLIENT_ID", "");
+    vi.stubEnv("JDOODLE_CLIENT_SECRET", "");
     expect(getCodeExecutionProvider()).toBeNull();
   });
 });

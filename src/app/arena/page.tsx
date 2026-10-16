@@ -26,6 +26,6 @@ export default function ArenaPage() {
       </aside>
       <section aria-label="Code editor and results"><CodeEditor /></section>
     </div>
-    <p className="mt-4 rounded-xl border border-[#e6e9df] bg-[#fffaf0] px-4 py-3 text-xs leading-5 text-[#776441]">Use <strong>Run code</strong> to send your source to the server execution API. It runs only when an execution provider is configured. This starter does not run hidden tests or save submissions.</p>
+    <p className="mt-4 rounded-xl border border-[#e6e9df] bg-[#fffaf0] px-4 py-3 text-xs leading-5 text-[#776441]"><strong>Run code</strong> runs the visible sample. <strong>Submit</strong> runs five hidden cases and updates your saved loops mastery. Both require the server-side JDoodle provider to be enabled. Use <strong>Try hostile input</strong> to verify the 12-second timeout.</p>
   </PageLayout>;
 }
