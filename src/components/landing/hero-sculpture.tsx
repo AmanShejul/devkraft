@@ -1,17 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { ReactNode } from "react";
 
-const HeroSculptureCanvas = dynamic(() => import("./hero-sculpture-canvas"), {
-  ssr: false,
-  loading: () => <StaticSculpture />,
-});
+function StaticSculpture() { return <div className="h-full min-h-[360px] w-full" role="img" aria-label="Abstract metallic learning path sculpture"><svg viewBox="0 0 640 520" className="h-full w-full" fill="none"><defs><linearGradient id="metal" x1="120" y1="420" x2="530" y2="80" gradientUnits="userSpaceOnUse"><stop stopColor="#444" /><stop offset=".35" stopColor="#eee" /><stop offset=".62" stopColor="#666" /><stop offset="1" stopColor="#fafafa" /></linearGradient></defs><ellipse cx="330" cy="452" rx="220" ry="22" fill="#fff" fillOpacity=".08" /><path d="M120 410c62-86 92-139 169-157 92-22 93-133 190-157 45-11 75 4 105 31" stroke="#111" strokeWidth="70" strokeLinecap="round" /><path d="M120 397c62-86 92-139 169-157 92-22 93-133 190-157 45-11 75 4 105 31" stroke="url(#metal)" strokeWidth="42" strokeLinecap="round" /><path d="M143 385c61-75 92-122 154-143 91-30 102-124 183-145" stroke="#fff" strokeOpacity=".55" strokeWidth="3" strokeLinecap="round" /><path d="M183 337 113 257M289 240l-8-96M402 108l48 68" stroke="#aaa" strokeWidth="2" strokeDasharray="4 9" /><circle cx="120" cy="397" r="14" fill="#ddd" /><circle cx="289" cy="240" r="15" fill="#f5f5f5" /><circle cx="493" cy="83" r="18" fill="#fff" /></svg></div>; }
 
-function StaticSculpture() {
-  return <div className="relative h-full min-h-[360px] w-full" aria-label="Abstract learning path sculpture" role="img"><svg viewBox="0 0 640 560" className="absolute inset-0 h-full w-full" fill="none"><defs><linearGradient id="fallback-metal" x1="130" y1="420" x2="520" y2="100" gradientUnits="userSpaceOnUse"><stop stopColor="#4a4a4a" /><stop offset=".35" stopColor="#f3f3f3" /><stop offset=".62" stopColor="#717171" /><stop offset="1" stopColor="#e9e9e9" /></linearGradient><filter id="fallback-shadow"><feGaussianBlur stdDeviation="12" /></filter></defs><ellipse cx="335" cy="465" rx="220" ry="28" fill="#fff" fillOpacity=".08" filter="url(#fallback-shadow)" /><path d="M122 417c63-84 87-154 168-169 95-17 87-145 199-159 40-5 73 7 103 29" stroke="#111" strokeWidth="72" strokeLinecap="round" /><path d="M122 405c63-84 87-154 168-169 95-17 87-145 199-159 40-5 73 7 103 29" stroke="url(#fallback-metal)" strokeWidth="43" strokeLinecap="round" /><path d="M143 393c61-79 86-129 157-145 99-22 95-132 193-150" stroke="#fff" strokeOpacity=".58" strokeWidth="3" strokeLinecap="round" /><path d="M179 350 114 272M293 236l-12-92M400 112l51 68" stroke="#a5a5a5" strokeWidth="2" strokeDasharray="4 9" /><circle cx="122" cy="405" r="16" fill="#dedede" /><circle cx="290" cy="236" r="16" fill="#f1f1f1" /><circle cx="490" cy="77" r="18" fill="#fff" /><circle cx="490" cy="77" r="29" stroke="#fff" strokeOpacity=".2" /></svg><span className="absolute bottom-[8%] left-[14%] border border-white/15 px-3 py-2 text-[10px] uppercase tracking-[.18em] text-white/50">Foundations</span><span className="absolute right-[7%] top-[10%] border border-white/15 px-3 py-2 text-[10px] uppercase tracking-[.18em] text-white/50">Mastery</span></div>;
-}
-
-export function HeroSculpture({ children }: { children?: ReactNode }) {
-  return <div className="relative h-[min(70vw,620px)] min-h-[390px] w-full"><HeroSculptureCanvas />{children}</div>;
-}
+const Canvas = dynamic(() => import("./hero-sculpture-canvas"), { ssr: false, loading: () => <StaticSculpture /> });
+export function HeroSculpture() { return <div className="relative h-[min(70vw,620px)] min-h-[380px] w-full"><Canvas /><div className="pointer-events-none absolute bottom-[8%] left-[8%] flex items-center gap-3 text-[10px] uppercase tracking-[.2em] text-white/40"><span className="h-px w-8 bg-white/35" /> A path through concepts</div></div>; }
