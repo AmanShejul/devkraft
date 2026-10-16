@@ -3,8 +3,8 @@ import { SectionCard } from "@/components/ui/section-card";
 
 const stats = [
   { label: "Concepts explored", value: "4 of 6", note: "Across the starter path", icon: Goal, color: "text-brand bg-brand-soft" },
-  { label: "Practice this week", value: "42 min", note: "Sample activity", icon: Timer, color: "text-[#a87513] bg-[#fff3d7]" },
-  { label: "Learning streak", value: "3 days", note: "Keep a steady rhythm", icon: Flame, color: "text-[#b96844] bg-[#ffede4]" },
+  { label: "Practice this week", value: "42 min", note: "Sample activity", icon: Timer, color: "text-white/70 bg-[#1b1b1b]" },
+  { label: "Learning streak", value: "3 days", note: "Keep a steady rhythm", icon: Flame, color: "text-white/70 bg-[#1b1b1b]" },
 ];
 
 export function ProgressSummary() {
