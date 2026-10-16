@@ -1,5 +1,6 @@
 import type { ApiFailure } from "@/types/api";
 import { apiFailure, apiSuccess } from "@/types/api";
+import { isCodeExecutionResult } from "@/types/domain";
 import type { CodeExecutionProvider } from "./contracts";
 import { executeCode, DEFAULT_PROVIDER_TIMEOUT_MS } from "./orchestrator";
 import { validateCodeExecutionRequest } from "./validation";
@@ -78,9 +79,16 @@ export async function handleCodeExecutionRequest(
   const outcome = await executeCode(validation.data, provider, timeoutMs);
   switch (outcome.kind) {
     case "result":
+      if (!isCodeExecutionResult(outcome.result)) {
+        return Response.json(apiFailure("EXECUTION_PROVIDER_ERROR", "The execution provider returned an invalid result."), { status: 502 });
+      }
       return Response.json(apiSuccess(outcome.result), { status: outcome.result.status === "queued" ? 202 : 200 });
     case "provider-not-configured":
       return Response.json(apiFailure("EXECUTION_PROVIDER_NOT_CONFIGURED", "No code-execution provider is configured on the server."), { status: 503 });
+    case "provider-misconfigured":
+      return Response.json(apiFailure("EXECUTION_PROVIDER_MISCONFIGURED", "The execution provider is not configured correctly on the server."), { status: 503 });
+    case "provider-quota-exhausted":
+      return Response.json(apiFailure("EXECUTION_PROVIDER_QUOTA_EXHAUSTED", "The execution provider has reached its available run quota."), { status: 503 });
     case "provider-timeout":
       return Response.json(apiFailure("EXECUTION_PROVIDER_TIMEOUT", "The execution provider did not respond before the server timeout."), { status: 504 });
     case "provider-unavailable":

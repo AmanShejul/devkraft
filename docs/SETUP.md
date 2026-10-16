@@ -29,7 +29,7 @@ npm run build
 ## Optional integrations
 
 - **Supabase:** Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the SSR/browser client helpers. The current dashboards and assessment flow do not authenticate or persist data. Never put a service-role key in a `NEXT_PUBLIC_` variable.
-- **Code execution:** The API contract and provider interface exist, but no adapter is enabled. Set `JDOODLE_CLIENT_ID` and `JDOODLE_CLIENT_SECRET` only after implementing and reviewing a server adapter, abort-aware timeouts, authenticated access, quotas, and provider error mapping. Judge0 is optional and requires a verified endpoint before adding `JUDGE0_API_URL`/`JUDGE0_API_KEY`. Until then, `/api/code/run` returns a typed 503 response and never executes source in this app.
+- **Code execution:** A server-side JDoodle adapter, response validation, a 64 KiB upstream response cap, and mocked tests are implemented. The provider factory deliberately remains disabled even if `JDOODLE_CLIENT_ID` and `JDOODLE_CLIENT_SECRET` are set: `/api/code/run` still needs authenticated access and a deployment-backed distributed rate/quota limiter before billable execution can be enabled. Store these credentials only as server-side secrets. Judge0 is optional and requires a verified endpoint before adding `JUDGE0_API_URL`/`JUDGE0_API_KEY`.
 - **Gemini:** `GEMINI_API_KEY` is reserved for a future server-only integration. The current mentor uses local notes plus deterministic heuristics. No generated explanation is available.
 
 Never commit `.env.local` or copy real secrets into `.env.example`.

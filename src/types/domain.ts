@@ -62,14 +62,67 @@ export interface CodeExecutionRequest {
   stdin?: string;
 }
 
-export interface CodeExecutionResult {
+interface CodeExecutionResultBase {
   status: "completed" | "failed" | "queued";
-  stdout: string;
-  stderr: string;
-  /** Provider-classified execution failure, when the provider supplies this detail. */
-  failureKind?: "compile-error" | "runtime-error" | "timeout";
-  durationMs?: number;
   provider: string;
+  /** Only include this classification when the provider supplies it reliably. */
+  failureKind?: "compile-error" | "runtime-error" | "timeout";
+  /** Only include this duration when the provider supplies it reliably. */
+  durationMs?: number;
+}
+
+/**
+ * Providers may return one combined output or distinct stdout/stderr streams.
+ * Do not split a combined output into fabricated channels.
+ */
+export type CodeExecutionResult = CodeExecutionResultBase & (
+  | {
+      output: string;
+      stdout?: never;
+      stderr?: never;
+    }
+  | {
+      output?: never;
+      stdout: string;
+      stderr: string;
+    }
+);
+
+/** Runtime validation for provider results and responses received by the UI. */
+export function isCodeExecutionResult(value: unknown): value is CodeExecutionResult {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+
+  const result = value as Record<string, unknown>;
+  if (
+    (result.status !== "completed" && result.status !== "failed" && result.status !== "queued")
+    || typeof result.provider !== "string"
+    || result.provider.trim().length === 0
+  ) {
+    return false;
+  }
+
+  if (
+    result.failureKind !== undefined
+    && result.failureKind !== "compile-error"
+    && result.failureKind !== "runtime-error"
+    && result.failureKind !== "timeout"
+  ) {
+    return false;
+  }
+  if (
+    result.durationMs !== undefined
+    && (typeof result.durationMs !== "number" || !Number.isFinite(result.durationMs) || result.durationMs < 0)
+  ) {
+    return false;
+  }
+
+  if (result.output !== undefined) {
+    return typeof result.output === "string"
+      && result.stdout === undefined
+      && result.stderr === undefined;
+  }
+
+  return typeof result.stdout === "string" && typeof result.stderr === "string";
 }
 
 export interface MentorHint {

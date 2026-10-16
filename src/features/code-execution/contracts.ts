@@ -5,7 +5,12 @@ export interface CodeExecutionProvider {
   execute(request: CodeExecutionRequest, options: { signal: AbortSignal }): Promise<CodeExecutionResult>;
 }
 
-export type CodeExecutionProviderErrorKind = "timeout" | "unavailable" | "provider-error";
+export type CodeExecutionProviderErrorKind =
+  | "timeout"
+  | "unavailable"
+  | "misconfigured"
+  | "quota-exhausted"
+  | "provider-error";
 
 /** Adapters use this error for safe, provider-independent failure classification. */
 export class CodeExecutionProviderError extends Error {
@@ -18,6 +23,8 @@ export class CodeExecutionProviderError extends Error {
 export type ExecutionOutcome =
   | { kind: "result"; result: CodeExecutionResult }
   | { kind: "provider-not-configured" }
+  | { kind: "provider-misconfigured" }
+  | { kind: "provider-quota-exhausted" }
   | { kind: "provider-timeout" }
   | { kind: "provider-unavailable" }
   | { kind: "provider-error" };

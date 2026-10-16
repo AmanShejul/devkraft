@@ -29,6 +29,8 @@ export async function executeCode(
     if (error instanceof CodeExecutionProviderError) {
       if (error.kind === "timeout") return { kind: "provider-timeout" };
       if (error.kind === "unavailable") return { kind: "provider-unavailable" };
+      if (error.kind === "misconfigured") return { kind: "provider-misconfigured" };
+      if (error.kind === "quota-exhausted") return { kind: "provider-quota-exhausted" };
     }
     return { kind: "provider-error" };
   } finally {

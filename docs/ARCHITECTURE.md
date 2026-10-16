@@ -31,7 +31,7 @@ docs/
 
 - `features/adaptive-learning` owns the prerequisite graph, BKT update, and deterministic mission choice. It does not import React. The BKT parameters are illustrative and are not a validated learning model.
 - `features/assessments` owns the private answer key and scoring. The question endpoint returns only prompts and choices; correctness is checked in the server route. Demo attempts are not persisted.
-- `features/code-execution` owns bounded request parsing, validation, provider interface, timeout/error mapping, and orchestration. `lib/execution/provider.ts` returns no provider until a reviewed provider adapter and server credentials are added. Submitted code is never run by this app.
+- `features/code-execution` owns bounded request parsing, validation, provider interface, timeout/error mapping, and orchestration. `lib/execution/jdoodle-provider.ts` implements the provider-independent interface with documented, pinned language mappings and combined-output semantics. `lib/execution/provider.ts` stays closed until authenticated access and distributed rate/quota controls are in place. Submitted code is never run by this app.
 - `features/rag` searches a local JSON note set using deterministic keyword overlap. `features/ai-mentor` combines retrieved notes with a separate heuristic suggestion. No Gemini adapter is connected.
 - `features/teacher-analytics` summarizes snapshots; the dashboard currently supplies an explicitly labelled sample cohort.
 - `types/domain.ts` contains shared contracts for concepts, mastery, missions, assessments, execution, mentoring, replay signals, and viva. `types/api.ts` defines the standard response envelope.

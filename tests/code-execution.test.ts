@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleCodeExecutionRequest, MAX_EXECUTION_REQUEST_BYTES } from "@/features/code-execution";
 import { CodeExecutionProviderError, type CodeExecutionProvider } from "@/features/code-execution/contracts";
-import type { CodeExecutionRequest, CodeExecutionResult } from "@/types/domain";
+import { isCodeExecutionResult, type CodeExecutionRequest, type CodeExecutionResult } from "@/types/domain";
 
 function postJson(value: string): Request {
   return new Request("http://localhost/api/code/run", {
@@ -33,6 +33,35 @@ describe("code execution API handler", () => {
     expect(response.status).toBe(200);
     expect(payload).toEqual({ ok: true, data: result });
     expect(provider.execute).toHaveBeenCalledWith(validRequest, { signal: expect.anything() });
+  });
+
+  it.each(["JDoodle combined output\n", ""])("returns combined output unchanged, including empty output", async (output) => {
+    const result: CodeExecutionResult = { status: "completed", output, provider: "jdoodle" };
+    const response = await handleCodeExecutionRequest(postJson(JSON.stringify(validRequest)), mockProvider(result));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, data: result });
+  });
+
+  it("rejects provider results that do not match the shared response contract", async () => {
+    const invalidProvider: CodeExecutionProvider = {
+      id: "invalid-provider",
+      execute: vi.fn().mockResolvedValue({ status: "completed", provider: "invalid-provider" }),
+    };
+    const response = await handleCodeExecutionRequest(postJson(JSON.stringify(validRequest)), invalidProvider);
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: { code: "EXECUTION_PROVIDER_ERROR", message: "The execution provider returned an invalid result." },
+    });
+  });
+
+  it("validates both combined-output and genuinely separated stream forms", () => {
+    expect(isCodeExecutionResult({ status: "completed", output: "", provider: "jdoodle" })).toBe(true);
+    expect(isCodeExecutionResult({ status: "failed", stdout: "", stderr: "diagnostic", provider: "other" })).toBe(true);
+    expect(isCodeExecutionResult({ status: "completed", output: "out", stdout: "out", stderr: "", provider: "jdoodle" })).toBe(false);
+    expect(isCodeExecutionResult({ status: "completed", stdout: "only stdout", provider: "other" })).toBe(false);
   });
 
   it("rejects malformed JSON and missing fields", async () => {
@@ -105,6 +134,28 @@ describe("code execution API handler", () => {
     expect(failure.status).toBe(502);
     expect(failureBody.error.code).toBe("EXECUTION_PROVIDER_ERROR");
     expect(failureBody.error.message).not.toContain("secret-bearing");
+  });
+
+  it("maps JDoodle credential and quota errors without returning provider details", async () => {
+    const misconfiguredProvider: CodeExecutionProvider = {
+      id: "jdoodle",
+      execute: vi.fn().mockRejectedValue(new CodeExecutionProviderError("misconfigured", "private details")),
+    };
+    const misconfigured = await handleCodeExecutionRequest(postJson(JSON.stringify(validRequest)), misconfiguredProvider);
+    const misconfiguredBody = await misconfigured.json();
+    expect(misconfigured.status).toBe(503);
+    expect(misconfiguredBody.error.code).toBe("EXECUTION_PROVIDER_MISCONFIGURED");
+    expect(misconfiguredBody.error.message).not.toContain("private details");
+
+    const quotaProvider: CodeExecutionProvider = {
+      id: "jdoodle",
+      execute: vi.fn().mockRejectedValue(new CodeExecutionProviderError("quota-exhausted", "private details")),
+    };
+    const quota = await handleCodeExecutionRequest(postJson(JSON.stringify(validRequest)), quotaProvider);
+    const quotaBody = await quota.json();
+    expect(quota.status).toBe(503);
+    expect(quotaBody.error.code).toBe("EXECUTION_PROVIDER_QUOTA_EXHAUSTED");
+    expect(quotaBody.error.message).not.toContain("private details");
   });
 
   it("preserves an actual provider's compile-error classification when supplied", async () => {

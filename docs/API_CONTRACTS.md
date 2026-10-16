@@ -49,7 +49,11 @@ Content-Type: application/json
 }
 ```
 
-Success returns `ApiResponse<CodeExecutionResult>` with HTTP 200. A queued provider response uses HTTP 202. `CodeExecutionResult` contains the provider's `status`, `stdout`, `stderr`, optional `durationMs`, and provider ID. A provider may set `failureKind` to `compile-error`, `runtime-error`, or `timeout` when it can reliably classify that result. Test results are not included because the app has no configured problem test harness. The API does not infer that an answer passed tests from stdout.
+The backend includes a JDoodle adapter for `POST https://api.jdoodle.com/v1/execute`. It maps the app languages to pinned JDoodle language/version pairs: TypeScript 5.9.3 (`typescript`, index `1`), JavaScript on Node.js 25.8.1 (`nodejs`, index `7`), and Python 3.14.3 (`python3`, index `6`). These indices are positions in JDoodle's language list; verify the official [language reference](https://www.jdoodle.com/docs/api/languages) before changing a pin. JDoodle's documented REST request and response fields are in its [REST reference](https://www.jdoodle.com/docs/api/rest).
+
+`CodeExecutionResult` supports either a combined `output` string or distinct `stdout`/`stderr` streams. The editor validates this shared contract and displays `output` as returned when present; it does not split combined text into streams. JDoodle returns combined output, so its adapter populates only `output`. It does not classify compiler diagnostics, runtime errors, or program timeouts from that text. For JDoodle, `status: "completed"` means the provider returned a final response; it does not mean the code compiled, passed tests, or was correct. The adapter does not set `failureKind` or `durationMs`, and this API does not return test results. An empty output string is a valid result and is shown as “Provider returned no output.”
+
+Successful synchronous execution returns `ApiResponse<CodeExecutionResult>` with HTTP 200. A different provider may return a queued result with HTTP 202. The JDoodle response body is limited to 64 KiB by this application; an oversized or malformed upstream response produces a sanitized provider error. The 12-second SkillPath deadline is an upstream request deadline, distinct from JDoodle's program-timeout diagnostic in combined output.
 
 | HTTP | Error code | Meaning |
 | --- | --- | --- |
@@ -57,11 +61,11 @@ Success returns `ApiResponse<CodeExecutionResult>` with HTTP 200. A queued provi
 | 413 | `REQUEST_TOO_LARGE`, `SOURCE_TOO_LARGE`, `STDIN_TOO_LARGE` | Request/source/input exceeds its bound. |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | Request is not `application/json`. |
 | 422 | `UNSUPPORTED_LANGUAGE` | Language is not TypeScript, JavaScript, or Python. |
-| 502 | `EXECUTION_PROVIDER_ERROR` | Provider failed; internal provider details are not returned. |
-| 503 | `EXECUTION_PROVIDER_NOT_CONFIGURED`, `EXECUTION_PROVIDER_UNAVAILABLE` | No adapter is configured or the provider is unavailable. |
+| 502 | `EXECUTION_PROVIDER_ERROR` | Provider response was malformed/oversized or the provider returned an unexpected failure; internal details are not returned. |
+| 503 | `EXECUTION_PROVIDER_NOT_CONFIGURED`, `EXECUTION_PROVIDER_UNAVAILABLE`, `EXECUTION_PROVIDER_MISCONFIGURED`, `EXECUTION_PROVIDER_QUOTA_EXHAUSTED` | No adapter is available, the provider is unavailable, credentials were rejected, or the provider account exhausted its credits. |
 | 504 | `EXECUTION_PROVIDER_TIMEOUT` | Provider did not respond within the 12-second server deadline. |
 
-The checked-in provider factory returns `null`, so the current route responds with `EXECUTION_PROVIDER_NOT_CONFIGURED` and never executes source itself. Before enabling a provider, implement a server-only adapter that conforms to `CodeExecutionProvider`, honors the abort signal, and maps only statuses the provider actually returns. Add authenticated access and deployment-appropriate rate/quota controls before connecting paid execution. `JDOODLE_CLIENT_ID` and `JDOODLE_CLIENT_SECRET` are placeholders for a future JDoodle adapter; no provider API endpoint or payload is assumed here.
+The adapter reads `JDOODLE_CLIENT_ID` and `JDOODLE_CLIENT_SECRET` only on the server and forwards the provider signal to fetch. The configured-provider factory intentionally still returns `null`: the current route has no authenticated access check or distributed rate limiter, so credentials must not enable billable public execution yet. No code runs in this app. Before enabling the factory, implement Supabase session authorization and deployment-appropriate distributed rate/quota controls. JDoodle documents HTTP 401 for rejected credentials and HTTP 429 for exhausted daily credits; SkillPath maps these to sanitized 503 errors. See JDoodle's [error and timeout guidance](https://www.jdoodle.com/docs/api/errors) and [credit policy](https://www.jdoodle.com/docs/api/credits).
 
 ## Mentor hint
 
