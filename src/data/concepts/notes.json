@@ -1,0 +1,37 @@
+[
+  {
+    "id": "variables",
+    "title": "Variables and values",
+    "keywords": ["variable", "assign", "value", "let", "const", "update", "store"],
+    "excerpt": "A variable gives a value a name. Assignment updates which value that name refers to.",
+    "body": "Use `let` when the binding will change and `const` when it will not be reassigned. In `score = score + 1`, the right side is evaluated first, then the result is stored back in score."
+  },
+  {
+    "id": "conditionals",
+    "title": "Making decisions with conditions",
+    "keywords": ["if", "else", "condition", "boolean", "true", "false", "branch"],
+    "excerpt": "An if statement runs its block only when its boolean condition is true.",
+    "body": "Comparisons such as `count > 0` produce a boolean. An `else` branch handles the case where the condition is false. Check boundary values such as zero to catch off-by-one mistakes."
+  },
+  {
+    "id": "loops",
+    "title": "Loops and iteration",
+    "keywords": ["loop", "iterate", "for", "while", "repeat", "counter", "infinite"],
+    "excerpt": "A loop repeats a block while its continuation condition allows another iteration.",
+    "body": "For a counted loop, check the initial value, stopping condition, and update step. A loop with `i < 4` and `i` starting at zero visits 0, 1, 2, and 3."
+  },
+  {
+    "id": "arrays",
+    "title": "Arrays and collections",
+    "keywords": ["array", "list", "index", "element", "collection", "length"],
+    "excerpt": "Arrays store ordered values, and JavaScript array indexes start at zero.",
+    "body": "An array with length 3 has valid indexes 0, 1, and 2. Use the length property to reason about bounds, and remember that reading beyond the final index does not return another element."
+  },
+  {
+    "id": "functions",
+    "title": "Functions and reusable behavior",
+    "keywords": ["function", "parameter", "argument", "return", "input", "output"],
+    "excerpt": "A function can take inputs through parameters and send a result back with return.",
+    "body": "Calling a function runs its body. `return` gives the caller a value and ends that function call. A parameter is the name in the definition; an argument is the value passed at a call site."
+  }
+]
