@@ -14,8 +14,8 @@ export const metadata: Metadata = { title: "Teacher workspace" };
 const summary = summarizeClass(DEMO_CLASS);
 const metrics = [
   { label: "Learners", value: String(summary.learnerCount), caption: "Sample class roster", icon: UsersRound, tint: "bg-brand-soft text-brand" },
-  { label: "On learning path", value: String(summary.onTrackCount), caption: `of ${summary.learnerCount} sample learners`, icon: BookOpenCheck, tint: "bg-[#eaf0ff] text-[#5572bb]" },
-  { label: "Average progress", value: `${summary.averageProgress}%`, caption: "Across starter concepts", icon: GraduationCap, tint: "bg-[#fff3d7] text-[#a87513]" },
+  { label: "On learning path", value: String(summary.onTrackCount), caption: `of ${summary.learnerCount} sample learners`, icon: BookOpenCheck, tint: "bg-[#202c3a] text-[#b8d4f0]" },
+  { label: "Average progress", value: `${summary.averageProgress}%`, caption: "Across starter concepts", icon: GraduationCap, tint: "bg-brand-soft text-brand" },
 ];
 
 export default function TeacherPage() {
@@ -29,10 +29,10 @@ export default function TeacherPage() {
         <ConceptWeakness />
         <StudentProgress />
       </div>
-      <SectionCard className="border-[#dce9e2] bg-[#eef6f1] shadow-none">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-xs font-bold uppercase tracking-[0.13em] text-brand">Suggested intervention</p><h2 className="mt-1 text-lg font-bold text-ink">Run a 10-minute loop tracing activity.</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted">Ask learners to trace the counter, condition, and update step for a few inputs. This suggestion is a sample based on seeded class data.</p></div><Link href="/assessment" className="inline-flex shrink-0 items-center gap-2 rounded-full bg-brand px-4 py-3 text-sm font-bold text-white hover:bg-brand-dark">Open check-in <ArrowRight size={15} /></Link></div>
+      <SectionCard className="border-[var(--line)] bg-[var(--panel-raised)] shadow-none">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-xs font-bold uppercase tracking-[0.13em] text-brand">Suggested intervention</p><h2 className="mt-1 text-lg font-bold text-ink">Run a 10-minute loop tracing activity.</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted">Ask learners to trace the counter, condition, and update step for a few inputs. This suggestion is a sample based on seeded class data.</p></div><Link href="/assessment" className="inline-flex shrink-0 items-center gap-2 rounded-full bg-brand px-4 py-3 text-sm font-bold text-[#171411] hover:bg-brand-dark">Open check-in <ArrowRight size={15} /></Link></div>
       </SectionCard>
-      <p className="rounded-2xl border border-[#e4ebe7] bg-white/70 px-5 py-4 text-xs leading-5 text-muted"><strong className="text-ink">Demo workspace:</strong> Class size, learner names, progress, and concept signals are sample data. No teacher account or student records are connected.</p>
+      <p className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-5 py-4 text-xs leading-5 text-muted"><strong className="text-ink">Demo workspace:</strong> Class size, learner names, progress, and concept signals are sample data. No teacher account or student records are connected.</p>
     </div>
   </PageLayout>;
 }

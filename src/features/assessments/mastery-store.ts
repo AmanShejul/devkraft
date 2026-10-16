@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { cookies } from "next/headers";
 import type { ConceptMastery } from "@/types/domain";
@@ -7,6 +7,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const LEARNER_COOKIE = "skillpath_learner_id";
 const LEARNER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MISSION_ID_PATTERN = /^[a-z0-9-]{1,64}$/;
 
 function isConceptMasteryArray(value: unknown): value is ConceptMastery[] {
   return Array.isArray(value) && value.every((item) => {
@@ -46,6 +47,13 @@ export async function getOrCreateLearnerId(): Promise<string> {
 function masteryFilePath(learnerId: string): string {
   if (!LEARNER_ID_PATTERN.test(learnerId)) throw new TypeError("Invalid learner id.");
   return path.join(process.cwd(), ".data", "learner-mastery", `${learnerId}.json`);
+}
+
+function vivaAttemptFilePath(learnerId: string, missionId: string): string {
+  if (!LEARNER_ID_PATTERN.test(learnerId) || !MISSION_ID_PATTERN.test(missionId)) {
+    throw new TypeError("Invalid learner or mission id.");
+  }
+  return path.join(process.cwd(), ".data", "learner-mastery", "viva-attempts", `${learnerId}-${missionId}.json`);
 }
 
 async function readFileMastery(learnerId: string): Promise<ConceptMastery[] | null> {
@@ -92,4 +100,56 @@ export async function saveLearnerMastery(learnerId: string, mastery: readonly Co
   const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(mastery, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   await rename(temporaryPath, filePath);
+}
+
+export async function claimVivaAttemptOnce(learnerId: string, missionId: string): Promise<boolean> {
+  if (!LEARNER_ID_PATTERN.test(learnerId) || !MISSION_ID_PATTERN.test(missionId)) {
+    throw new TypeError("Invalid learner or mission id.");
+  }
+  const supabase = await createSupabaseServerClient(learnerId);
+  if (supabase) {
+    const { data, error } = await supabase
+      .from("learner_viva_attempts")
+      .upsert({ learner_id: learnerId, mission_id: missionId }, {
+        onConflict: "learner_id,mission_id",
+        ignoreDuplicates: true,
+      })
+      .select("mission_id")
+      .maybeSingle();
+    if (error) throw new Error(`Could not record viva attempt: ${error.message}`);
+    return data !== null;
+  }
+
+  const filePath = vivaAttemptFilePath(learnerId, missionId);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  try {
+    await writeFile(filePath, `${JSON.stringify({ learnerId, missionId, countedAt: new Date().toISOString() })}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") return false;
+    throw error;
+  }
+}
+
+export async function releaseVivaAttemptClaim(learnerId: string, missionId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient(learnerId);
+  if (supabase) {
+    const { error } = await supabase
+      .from("learner_viva_attempts")
+      .delete()
+      .eq("learner_id", learnerId)
+      .eq("mission_id", missionId);
+    if (error) throw new Error(`Could not release viva attempt: ${error.message}`);
+    return;
+  }
+
+  try {
+    await unlink(vivaAttemptFilePath(learnerId, missionId));
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
+    throw error;
+  }
 }

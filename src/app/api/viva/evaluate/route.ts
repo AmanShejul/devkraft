@@ -1,4 +1,10 @@
-import { getOrCreateLearnerId, getLearnerMastery, saveLearnerMastery } from "@/features/assessments/mastery-store";
+import {
+  claimVivaAttemptOnce,
+  getOrCreateLearnerId,
+  getLearnerMastery,
+  releaseVivaAttemptClaim,
+  saveLearnerMastery,
+} from "@/features/assessments/mastery-store";
 import { evaluateVivaAnswers, updateVivaMastery } from "@/features/viva/viva";
 import { apiFailure, apiSuccess } from "@/types/api";
 import type { ConceptMastery, VivaEvaluation } from "@/types/domain";
@@ -71,11 +77,32 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Viva answers were evaluated, but saved mastery could not be loaded."), { status: 500 });
   }
 
-  const update = updateVivaMastery(currentMastery, evaluations);
+  let claimed: boolean;
+  try {
+    claimed = await claimVivaAttemptOnce(learnerId, "countdown");
+  } catch (error) {
+    console.error("Could not record viva attempt.", error);
+    return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Viva answers were evaluated, but the counted attempt could not be recorded."), { status: 500 });
+  }
+
+  const update = updateVivaMastery(currentMastery, evaluations, new Date(), !claimed);
+  if (!claimed) {
+    return Response.json(apiSuccess({
+      ...update,
+      message: "This learner's viva attempt for the countdown mission was already counted; mastery was not updated again.",
+      evaluations,
+    }));
+  }
+
   try {
     await saveLearnerMastery(learnerId, update.mastery);
   } catch (error) {
     console.error("Could not save mastery for viva evaluation.", error);
+    try {
+      await releaseVivaAttemptClaim(learnerId, "countdown");
+    } catch (releaseError) {
+      console.error("Could not release the failed viva attempt claim.", releaseError);
+    }
     return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Viva answers were evaluated, but mastery could not be saved."), { status: 500 });
   }
 

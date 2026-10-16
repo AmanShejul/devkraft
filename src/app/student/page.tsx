@@ -39,7 +39,7 @@ export default async function StudentPage() {
             <MissionCard mission={nextMission} />
             <SectionCard>
               <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-bold text-ink">Recent activity</h2><p className="mt-1 text-xs text-muted">A sample of your recent practice.</p></div><Link href="/assessment" className="text-xs font-bold text-brand">All activity</Link></div>
-              <div className="mt-4 divide-y divide-[#edf1ef]">
+              <div className="mt-4 divide-y divide-[var(--line)]">
                 {DEMO_RECENT_ACTIVITY.map((activity) => {
                   const Icon = activity.icon === "check" ? Check : activity.icon === "code" ? Code2 : FileText;
                   return <div key={activity.label} className="flex items-center gap-3 py-3.5 first:pt-1 last:pb-0"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand"><Icon size={16} /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-ink">{activity.label}</p><p className="mt-0.5 text-xs text-muted">{activity.detail}</p></div><span className="shrink-0 text-[11px] text-muted">{activity.time}</span></div>;
@@ -50,7 +50,7 @@ export default async function StudentPage() {
           </div>
           <MasteryList mastery={mastery} />
         </div>
-        <div className="rounded-2xl border border-[#dfeae4] bg-white/70 px-5 py-4 text-xs leading-5 text-muted"><strong className="text-ink">{hasSavedMastery ? "Learner progress:" : "Demo workspace:"}</strong> {hasSavedMastery ? "Concept mastery reflects your latest assessment; other concepts use the configured starting estimate. Recent activity remains sample data." : "Progress, activity, and concept estimates are seeded examples. Submit an assessment to save your mastery progress."}</div>
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-5 py-4 text-xs leading-5 text-muted"><strong className="text-ink">{hasSavedMastery ? "Learner progress:" : "Demo workspace:"}</strong> {hasSavedMastery ? "Concept mastery reflects your latest assessment; other concepts use the configured starting estimate. Recent activity remains sample data." : "Progress, activity, and concept estimates are seeded examples. Submit an assessment to save your mastery progress."}</div>
       </div>
     </PageLayout>
   );

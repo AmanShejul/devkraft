@@ -5,11 +5,15 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#f5f5f5",
-        muted: "#8f8f8f",
-        canvas: "#000000",
-        brand: { DEFAULT: "#ffffff", dark: "#ffffff", soft: "#1b1b1b" },
-        sun: "#c4c4c4",
+        ink: "var(--ink)",
+        muted: "var(--muted)",
+        canvas: "var(--canvas)",
+        brand: {
+          DEFAULT: "var(--brand)",
+          dark: "var(--brand-dark)",
+          soft: "var(--brand-soft)",
+        },
+        sun: "var(--sun)",
       },
       boxShadow: { card: "none" },
       fontFamily: { sans: ["var(--font-manrope)", "Arial", "sans-serif"] },

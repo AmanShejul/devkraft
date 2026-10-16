@@ -17,6 +17,7 @@ interface VivaQuestionContext {
 export interface VivaMasteryUpdate {
   understandingScore: number;
   mastery: ConceptMastery[];
+  masteryCounted: boolean;
 }
 
 function captureFirst(sourceCode: string, patterns: readonly RegExp[]): string | undefined {
@@ -73,31 +74,47 @@ export function generateVivaQuestions(sourceCode: string): VivaQuestion[] {
   ];
 }
 
+export function prepareVivaForSubmit(sourceCode: string): { questions: VivaQuestion[]; message: string } {
+  const questions = generateVivaQuestions(sourceCode);
+  return {
+    questions,
+    message: questions.length === 3
+      ? ""
+      : "Could not identify the loop, return path, and collection in your code to generate explanation questions.",
+  };
+}
+
 function normalizeAnswer(answer: string): string {
-  return answer.toLowerCase().replace(/\s+/g, " ").trim();
+  return answer.toLowerCase().replace(/\bone\b/g, "1").replace(/\bzero\b/g, "0").replace(/\s+/g, " ").trim();
 }
 
 function isLoopBoundExplained(answer: string, condition: string): boolean {
   const normalized = normalizeAnswer(answer);
   const conditionText = normalizeAnswer(condition);
-  const hasOneBound = /\b1\b/.test(conditionText);
-  const hasLowerBoundCheck = /(?:>=|≥|greater than or equal|at least)/.test(normalized);
-  const explainsStopAtOne = /(?:stop|stops|end|ends|until|down to|reach(?:es)?|include).{0,40}\b1\b/.test(normalized)
-    || /\b1\b.{0,40}(?:stop|end|last|inclusive|included)/.test(normalized);
-  return (normalized.includes(conditionText) || hasLowerBoundCheck) && (!hasOneBound || explainsStopAtOne);
+  const namesCondition = normalized.includes(conditionText) || /\b(?:condition|loop|counter|cursor|number)\b/.test(normalized);
+  const explainsInclusiveBound = /(?:at least 1|greater than or equal(?: to)? 1|>=\s*1|down to 1|until .{0,30}(?:below|less than) 1|stop(?:s)? .{0,30}(?:below|less than) 1|drop(?:s)? below 1|reach(?:es)? 0|become(?:s)? 0|stop(?:s)? .{0,30}\b0\b)/.test(normalized);
+  const explainsLoopBehavior = /\b(?:loop|repeat|iterate|continue|stops?|ends?|until|while|condition)\b/.test(normalized);
+  const contradictsBound = /(?:stop|end|finish)(?:s)? .{0,20}(?:at|when it reaches?) 1\b/.test(normalized);
+  return namesCondition && explainsInclusiveBound && explainsLoopBehavior && !contradictsBound;
 }
 
 function isReturnPathExplained(answer: string): boolean {
   const normalized = normalizeAnswer(answer);
-  return /\b1\b/.test(normalized)
-    && (/\[\s*1\s*\]/.test(normalized) || /\b(single|one item|one number|one-element|one element)\b/.test(normalized));
+  const describesReturn = /\b(?:return|returns|produce|produces|yield|yields|contain|contains|has)\b/.test(normalized);
+  const describesCollection = /\b(?:array|list|collection|sequence)\b/.test(normalized);
+  const describesOnlyOne = /\b(?:only|single|one|1)\b/.test(normalized)
+    && /\b(?:item|element|value|number)\b/.test(normalized);
+  const hasOne = /\b1\b/.test(normalized);
+  const isExactArray = /\[\s*1\s*\]/.test(normalized);
+  return describesReturn && describesCollection && ((describesOnlyOne && hasOne) || isExactArray);
 }
 
 function isAccumulatorRoleExplained(answer: string, collectionName: string): boolean {
   const normalized = normalizeAnswer(answer);
-  const namesCollection = normalized.includes(collectionName.toLowerCase());
-  const describesRole = /\b(array|list|collection|store|hold|contain|collect|append|number|value|result)\b/.test(normalized);
-  const describesSequence = /\b(start|count|down|number|value|sequence|1)\b/.test(normalized);
+  const namesCollection = normalized.includes(collectionName.toLowerCase())
+    || /\b(?:array|list|collection)\b/.test(normalized);
+  const describesRole = /\b(?:store|hold|contain|collect|accumulate|append)\w*\b/.test(normalized);
+  const describesSequence = /\b(?:countdown|count down|from|down to|through|each|every|1)\b/.test(normalized);
   return namesCollection && describesRole && describesSequence;
 }
 
@@ -145,9 +162,13 @@ export function updateVivaMastery(
   currentMastery: readonly ConceptMastery[],
   evaluations: readonly VivaEvaluation[],
   now = new Date(),
+  alreadyCounted = false,
 ): VivaMasteryUpdate {
   if (evaluations.length === 0) throw new TypeError("At least one viva evaluation is required.");
   const understandingScore = evaluations.reduce((sum, evaluation) => sum + evaluation.score, 0) / evaluations.length;
+  if (alreadyCounted) {
+    return { understandingScore, mastery: [...currentMastery], masteryCounted: false };
+  }
   const previous = currentMastery.find((item) => item.conceptId === "loops") ?? {
     conceptId: "loops",
     probability: LEARNING_CONFIG.bkt.initialMastery,
@@ -156,5 +177,6 @@ export function updateVivaMastery(
   return {
     understandingScore,
     mastery: [...currentMastery.filter((item) => item.conceptId !== "loops"), updated],
+    masteryCounted: true,
   };
 }

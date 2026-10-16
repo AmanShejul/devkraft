@@ -8,7 +8,7 @@ import { Play, Send, Settings2 } from "lucide-react";
 import type { ApiResponse } from "@/types/api";
 import { isCodeExecutionResult, type CodeExecutionRequest, type CodeExecutionResult, type SessionEvent, type VivaEvaluation, type VivaQuestion } from "@/types/domain";
 import type { CountDownTestResult } from "@/features/code-execution/count-down-tests";
-import { generateVivaQuestions } from "@/features/viva/viva";
+import { prepareVivaForSubmit } from "@/features/viva/viva";
 import { SessionReplay } from "@/components/coding/session-replay";
 
 const Monaco = dynamic(() => import("@monaco-editor/react"), {
@@ -58,6 +58,7 @@ interface VivaResponse {
   evaluations: VivaEvaluation[];
   understandingScore: number;
   mastery: { conceptId: string; probability: number; updatedAt?: string }[];
+  masteryCounted: boolean;
 }
 
 function isCodeSubmissionResponse(value: unknown): value is CodeSubmissionResponse {
@@ -265,6 +266,11 @@ export function CodeEditor() {
       setVivaEvaluations([]);
       setVivaUnderstandingScore(null);
       setVivaMessage("");
+      if (action === "submit") {
+        const viva = prepareVivaForSubmit(submittedSource);
+        setVivaQuestions(viva.questions);
+        setVivaMessage(viva.message);
+      }
     }
     setPending(true);
     setExecution(null);
@@ -305,14 +311,6 @@ export function CodeEditor() {
           return;
         }
         setSubmission(candidate.data);
-        if (candidate.data.verdict === "passed") {
-          const generatedQuestions = generateVivaQuestions(submittedSource);
-          setVivaQuestions(generatedQuestions);
-          setVivaAnswers({});
-          if (generatedQuestions.length !== 3) {
-            setVivaMessage("Hidden tests passed, but the code structure did not expose the loop details needed to generate viva questions.");
-          }
-        }
         setProviderReady(true);
         setMessage(`${candidate.data.passed} of ${candidate.data.total} hidden tests passed. Loop mastery was updated.`);
         return;
@@ -388,6 +386,7 @@ export function CodeEditor() {
           && typeof evaluation.feedback === "string"
           && evaluation.evaluatedBy === "heuristic")
         || typeof result.understandingScore !== "number"
+        || typeof result.masteryCounted !== "boolean"
         || !Array.isArray(result.mastery)
       ) {
         setVivaMessage("The viva API response did not match its contract.");
@@ -395,7 +394,9 @@ export function CodeEditor() {
       }
       setVivaEvaluations(result.evaluations);
       setVivaUnderstandingScore(result.understandingScore);
-      setVivaMessage("Heuristic evaluation complete. Your loops mastery was updated.");
+      setVivaMessage(result.masteryCounted
+        ? "Heuristic evaluation complete. Your loops mastery was updated."
+        : "Heuristic evaluation complete. This mission's viva mastery update was already counted.");
     } catch {
       setVivaMessage("Could not reach the viva evaluation API. Check your connection and try again.");
     } finally {
@@ -406,13 +407,13 @@ export function CodeEditor() {
   const hasError = errorCode !== undefined;
 
   return <div className="space-y-5">
-    <div className="overflow-hidden rounded-[22px] border border-[#24343d] bg-[#101b22] shadow-card" onPasteCapture={() => {
+    <div className="overflow-hidden rounded-[22px] border border-[var(--line)] bg-[var(--panel)] shadow-card" onPasteCapture={() => {
       pastePending.current = true;
       queueMicrotask(() => { pastePending.current = false; });
     }}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
       <div className="flex items-center gap-2"><span className="size-2 rounded-full bg-[#e6b657]" /><span className="text-xs font-bold text-white/85">solution</span><span className="text-xs text-white/40">/</span><label htmlFor="language" className="sr-only">Editor language</label><select id="language" value={language} disabled={pending} onChange={(event) => changeLanguage(event.target.value as CodeExecutionRequest["language"])} className="rounded-lg border border-white/10 bg-[#18262e] px-2.5 py-1.5 text-xs font-semibold text-white/80 disabled:opacity-60"><option value="typescript">TypeScript</option><option value="javascript">JavaScript</option><option value="python">Python</option></select></div>
-      <div className="flex items-center gap-2"><span title="Provider status" className="inline-flex items-center gap-1.5 text-[11px] text-[#e8bd64]"><Settings2 size={13} /> {providerReady ? "Provider ready" : "Provider not configured"}</span><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white hover:bg-brand-dark disabled:opacity-60"><Play size={13} fill="currentColor" /> Run</button><button type="button" onClick={() => void requestExecution("submit")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-white/85 hover:bg-white/10 disabled:opacity-60"><Send size={13} /> Submit</button><button type="button" onClick={() => void requestExecution("hostile")} disabled={pending} className="rounded-lg border border-[#e8bd64]/40 px-2 py-2 text-[10px] font-semibold text-[#e8bd64] hover:bg-white/10 disabled:opacity-60">Try hostile input</button></div>
+      <div className="flex items-center gap-2"><span title="Provider status" className="inline-flex items-center gap-1.5 text-[11px] text-[#e8bd64]"><Settings2 size={13} /> {providerReady ? "Provider ready" : "Provider not configured"}</span><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-60"><Play size={13} fill="currentColor" /> Run</button><button type="button" onClick={() => void requestExecution("submit")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-white/85 hover:bg-white/10 disabled:opacity-60"><Send size={13} /> Submit</button><button type="button" onClick={() => void requestExecution("hostile")} disabled={pending} className="rounded-lg border border-[#e8bd64]/40 px-2 py-2 text-[10px] font-semibold text-[#e8bd64] hover:bg-white/10 disabled:opacity-60">Try hostile input</button></div>
     </div>
     <div className="h-[390px]">
       <Monaco height="390px" theme="vs-dark" language={language} value={sourceCode} onChange={(value) => changeSourceCode(value ?? "")} onMount={onEditorMount} options={{ minimap: { enabled: false }, readOnly: pending, fontSize: 13, tabSize: 2, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true, wordWrap: "on", lineNumbersMinChars: 3 }} />
@@ -424,7 +425,7 @@ export function CodeEditor() {
         {submission && <div aria-label="Hidden test results" className="mt-3 flex flex-wrap gap-2">
           {submission.cases.map((testCase, index) => <span key={testCase.caseId} className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${testCase.passed ? "border-[#338f75]/50 bg-[#174b40] text-[#9ae0c8]" : "border-[#b35c53]/50 bg-[#542c2a] text-[#ffb3aa]"}`}>Case {index + 1}: {testCase.passed ? "Pass" : "Fail"}</span>)}
         </div>}
-        {vivaQuestions.length > 0 && submission?.verdict === "passed" && <section aria-labelledby="viva-heading" className="mt-5 border-t border-white/10 pt-4">
+        {vivaQuestions.length > 0 && <section aria-labelledby="viva-heading" className="mt-5 border-t border-white/10 pt-4">
           <h3 id="viva-heading" className="text-sm font-bold text-white/90">Now explain your solution</h3>
           <p className="mt-1 text-[11px] leading-5 text-white/55">Questions are based on the identifiers and loop in your submitted code. Your answers are evaluated locally with a heuristic, not an LLM.</p>
           <form onSubmit={(formEvent) => void evaluateViva(formEvent)} className="mt-3 space-y-4">
@@ -445,12 +446,12 @@ export function CodeEditor() {
                 {evaluation && <p className="mt-2 rounded-lg bg-white/5 px-3 py-2 text-xs leading-5 text-white/75"><strong>{evaluation.score.toFixed(1)} · Heuristic feedback:</strong> {evaluation.feedback}</p>}
               </div>;
             })}
-            {vivaEvaluations.length === 0 && <button type="submit" disabled={pending || vivaQuestions.some((question) => !vivaAnswers[question.id]?.trim())} className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white hover:bg-brand-dark disabled:opacity-50">Evaluate explanations</button>}
+            {vivaEvaluations.length === 0 && <button type="submit" disabled={pending || vivaQuestions.some((question) => !vivaAnswers[question.id]?.trim())} className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-50">Evaluate explanations</button>}
           </form>
           {vivaMessage && <p role="status" aria-live="polite" className="mt-3 text-xs leading-5 text-[#e8bd64]">{vivaMessage}</p>}
           {vivaUnderstandingScore !== null && <p className="mt-2 text-xs font-semibold text-white/75">Understanding score: {Math.round(vivaUnderstandingScore * 100)}% · loops mastery updated</p>}
         </section>}
-        {vivaQuestions.length === 0 && submission?.verdict === "passed" && vivaMessage && <p role="status" className="mt-3 text-xs leading-5 text-[#e8bd64]">{vivaMessage}</p>}
+        {vivaQuestions.length === 0 && vivaMessage && <p role="status" className="mt-3 text-xs leading-5 text-[#e8bd64]">{vivaMessage}</p>}
         {execution?.output !== undefined && (execution.output.length > 0
           ? <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs text-white/80">{execution.output}</pre>
           : <p className="mt-2 text-xs text-white/50">Provider returned no output.</p>)}
@@ -465,7 +466,7 @@ export function CodeEditor() {
       </div>
     </div>
     </div>
-    {timelineError && <p role="status" className="rounded-xl border border-[#e4c987] bg-[#fffaf0] px-4 py-3 text-xs text-[#776441]">{timelineError}</p>}
+    {timelineError && <p role="status" className="rounded-xl border border-[#725b36] bg-[#292318] px-4 py-3 text-xs text-[#e8d4ad]">{timelineError}</p>}
     <SessionReplay key={sessionId} sessionId={sessionId || "loading"} events={timeline} onStartNewAttempt={startNewAttempt} />
   </div>;
 }

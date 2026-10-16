@@ -19,7 +19,7 @@ export function SiteHeader() {
   const [open, setOpen] = useState(false);
   if (pathname === "/") return null;
   return (
-    <header className="sticky top-0 z-40 border-b border-[#202020] bg-black/95 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-canvas/95 backdrop-blur">
       <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-5 px-5 sm:px-8">
         <Link href="/" className="flex shrink-0" aria-label="SkillPath home" onClick={() => setOpen(false)}><SkillPathLogo dark /></Link>
         <button type="button" aria-label={open ? "Close navigation" : "Open navigation"} aria-expanded={open} onClick={() => setOpen((value) => !value)} className="grid size-10 place-items-center border border-[#303030] text-white md:hidden">{open ? <X size={18} /> : <Menu size={18} />}</button>
@@ -29,7 +29,7 @@ export function SiteHeader() {
               {link.label}
             </Link>
           ))}
-          <Link href="/student" onClick={() => setOpen(false)} className="ml-1 inline-flex items-center justify-center gap-1 bg-white px-4 py-2.5 text-[13px] font-bold text-black transition hover:bg-white/80">
+          <Link href="/student" onClick={() => setOpen(false)} className="ml-1 inline-flex items-center justify-center gap-1 bg-brand px-4 py-2.5 text-[13px] font-bold text-[#171411] transition hover:bg-brand-dark">
             Open workspace <ArrowUpRight size={15} />
           </Link>
         </nav>

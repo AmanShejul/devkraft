@@ -52,16 +52,16 @@ export function SessionReplay({ sessionId, events, onStartNewAttempt }: SessionR
     if (matchingIndex >= 0) setSelectedIndex(matchingIndex);
   }
 
-  return <section aria-label="Session replay" className="rounded-2xl border border-[#262626] bg-[#090909] p-5 shadow-card sm:p-6">
+  return <section aria-label="Session replay" className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-card sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 className="text-lg font-bold text-ink">Session timeline</h2>
         <p className="mt-1 text-xs text-muted">Attempt {sessionId.slice(0, 8)} · {events.length} events</p>
       </div>
-      <button type="button" onClick={onStartNewAttempt} className="rounded-full border border-[#dfe8e3] px-3 py-1.5 text-xs font-bold text-ink hover:bg-[#f6f9f7]">New attempt</button>
+      <button type="button" onClick={onStartNewAttempt} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-bold text-ink hover:bg-[var(--panel-raised)]">New attempt</button>
     </div>
 
-    <div className="mt-4 rounded-xl bg-[#f5f8f6] p-3 text-xs leading-5 text-muted">
+    <div className="mt-4 rounded-xl bg-[var(--panel-raised)] p-3 text-xs leading-5 text-muted">
       <strong className="text-ink">Trainer note:</strong> Signals are evidence, not verdicts.
     </div>
 
@@ -70,7 +70,7 @@ export function SessionReplay({ sessionId, events, onStartNewAttempt }: SessionR
         key={`${signal.kind}-${signal.occurredAt}`}
         type="button"
         onClick={() => jumpToSignal(signal)}
-        className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#e4c987] bg-[#fffaf0] px-3 py-2 text-left text-xs text-[#776441] hover:bg-[#fff4d9]"
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#725b36] bg-[#292318] px-3 py-2 text-left text-xs text-[#e8d4ad] hover:bg-[#352d1e]"
       >
         <span><strong>Flagged for review:</strong> {signalLabel(signal.kind)}</span>
         <time dateTime={signal.occurredAt} className="shrink-0">{formatTimestamp(signal.occurredAt)}</time>
@@ -87,7 +87,7 @@ export function SessionReplay({ sessionId, events, onStartNewAttempt }: SessionR
         max={events.length - 1}
         value={activeIndex}
         onChange={(event) => setSelectedIndex(Number(event.target.value))}
-        className="mt-2 w-full accent-[#177c68]"
+        className="mt-2 w-full accent-[#e8b96a]"
       />
       {selectedEvent && <p className="mt-2 text-xs text-muted"><time dateTime={selectedEvent.occurredAt}>{formatTimestamp(selectedEvent.occurredAt)}</time> · {eventDescription(selectedEvent)}</p>}
       <ol className="mt-4 max-h-56 space-y-1.5 overflow-auto">
@@ -96,7 +96,7 @@ export function SessionReplay({ sessionId, events, onStartNewAttempt }: SessionR
             type="button"
             aria-current={index === activeIndex ? "step" : undefined}
             onClick={() => setSelectedIndex(index)}
-            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs ${index === activeIndex ? "bg-brand-soft text-brand-dark" : "text-muted hover:bg-[#f5f8f6]"}`}
+            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs ${index === activeIndex ? "bg-brand-soft text-ink" : "text-muted hover:bg-[var(--panel-raised)]"}`}
           >
             <time dateTime={event.occurredAt} className="shrink-0 tabular-nums">{formatTimestamp(event.occurredAt)}</time>
             <span>{eventDescription(event)}</span>

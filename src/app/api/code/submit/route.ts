@@ -1,6 +1,5 @@
-import { LEARNING_CONFIG } from "@/config/learning";
 import { runCountDownHiddenTests } from "@/features/code-execution";
-import { updateConceptMastery } from "@/features/adaptive-learning/bkt";
+import { updateMissionMasteryFromSubmission } from "@/features/code-execution/mastery";
 import { getOrCreateLearnerId, getLearnerMastery, saveLearnerMastery } from "@/features/assessments/mastery-store";
 import { apiFailure, apiSuccess } from "@/types/api";
 import type { ConceptMastery } from "@/types/domain";
@@ -38,7 +37,6 @@ export async function POST(request: Request): Promise<Response> {
   if (execution.kind !== "hidden-tests") return executionFailure(execution.kind);
 
   const { result } = execution;
-  const answeredCorrectly = result.passed / result.total >= 0.6;
   let learnerId: string;
   let currentMastery: ConceptMastery[];
   try {
@@ -49,12 +47,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Hidden tests ran, but saved mastery could not be loaded."), { status: 500 });
   }
 
-  const previous = currentMastery.find((item) => item.conceptId === "loops") ?? {
-    conceptId: "loops",
-    probability: LEARNING_CONFIG.bkt.initialMastery,
-  };
-  const updated = updateConceptMastery(previous, answeredCorrectly, LEARNING_CONFIG.bkt);
-  const mastery = [...currentMastery.filter((item) => item.conceptId !== "loops"), updated];
+  const mastery = updateMissionMasteryFromSubmission(currentMastery, result.passed / result.total >= 0.6);
   try {
     await saveLearnerMastery(learnerId, mastery);
   } catch (error) {
