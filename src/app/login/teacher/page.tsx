@@ -10,7 +10,7 @@ export default async function TeacherLoginPage({
 }) {
   const { reason } = await searchParams;
   return (
-    <main className="mx-auto flex min-h-[calc(100vh-72px)] max-w-7xl items-center justify-center px-5 py-12 sm:px-8">
+    <main className="relative mx-auto flex min-h-screen max-w-7xl items-center justify-center px-5 py-8 sm:px-8 sm:py-10">
       <LoginForm role="teacher" roleMismatch={reason === "role"} />
     </main>
   );

@@ -107,6 +107,14 @@ pre, code { font-family: var(--font-mono); }
   to { opacity: 1; transform: translateY(0); }
 }
 .question-arrive { animation: question-arrive .35s ease-out both; }
+@keyframes auth-card-enter {
+  from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes auth-orbit {
+  from { transform: translate3d(-3%, -2%, 0) scale(.94); }
+  to { transform: translate3d(4%, 3%, 0) scale(1.08); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
