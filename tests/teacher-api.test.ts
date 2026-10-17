@@ -12,7 +12,10 @@ describe("teacher question API safety", () => {
     const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       expect(url).toBe("http://ollama.test/api/generate");
-      const requestBody = JSON.parse(String(init?.body)) as { prompt: string };
+      const requestBody = JSON.parse(String(init?.body)) as { prompt: string; format: { properties: { questions: { minItems: number; maxItems: number } } } };
+      expect(requestBody.prompt).toContain("A relational database organizes records into tables");
+      expect(requestBody.format.properties.questions.minItems).toBe(5);
+      expect(requestBody.format.properties.questions.maxItems).toBe(5);
       const sourceChunkId = requestBody.prompt.match(/\[([^\s]+) \| page/)?.[1] ?? "missing";
       const options = ["tables", "primary keys", "records", "relational database", "queries"];
       return Response.json({ response: JSON.stringify({

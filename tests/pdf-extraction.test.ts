@@ -40,6 +40,15 @@ describe("local PDF extraction", () => {
     expect(chunks.every((chunk) => chunk.topic === "Data structures")).toBe(true);
   });
 
+  it("coalesces short extracted fragments into useful context windows", () => {
+    const text = Array.from({ length: 120 }, (_, index) => `Section ${index} explains an important relationship between the concepts.`).join(" ");
+    const chunks = chunkPdfPages("document-2", "notes.pdf", [{ page: 2, text }]);
+
+    expect(chunks.length).toBeLessThan(10);
+    expect(chunks.map((chunk) => chunk.content).join(" ")).toContain("Section 0");
+    expect(chunks.map((chunk) => chunk.content).join(" ")).toContain("Section 119");
+  });
+
   it("rejects malformed and encrypted PDFs with actionable codes", () => {
     expect(() => extractPdfPages(Buffer.from("not a PDF"))).toThrowError(PdfExtractionError);
     expect(() => extractPdfPages(Buffer.from("%PDF-1.4\n/Encrypt 4 0 R"))).toThrowError(/encrypted/i);

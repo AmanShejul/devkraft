@@ -22,6 +22,7 @@ type Star = {
   opacity: number;
   color: string;
   blur: number;
+  glowTexture: HTMLCanvasElement | null;
   glint: boolean;
   depthLayer: 0 | 1 | 2;
   cursorOffsetX: number;
@@ -97,6 +98,8 @@ const INTRO_DURATION = 8_000;
 const COMPLETION_FLASH_DURATION = 750;
 const SHOCKWAVE_DURATION = 1_200;
 const BASE_ROTATION_DEGREES_PER_SECOND = 4;
+const DEPTH_SMOOTHING_TIME_MS = 190;
+const CURSOR_SMOOTHING_TIME_MS = 96;
 const METEOR_MIN_DELAY = 7_000;
 const METEOR_MAX_DELAY = 12_000;
 const METEOR_DURATION = 1_800;
@@ -111,6 +114,12 @@ const palette = [
   { color: "#b8d4f0", weight: 12 },
   { color: "#f0b8c8", weight: 10 },
   { color: "#e8b96a", weight: 8 },
+] as const;
+const starGlowColors = [
+  { color: "#f5f2ea", glow: "rgba(245, 242, 234, 0.62)" },
+  { color: "#b8d4f0", glow: "rgba(184, 212, 240, 0.62)" },
+  { color: "#f0b8c8", glow: "rgba(240, 184, 200, 0.62)" },
+  { color: "#e8b96a", glow: "rgba(232, 185, 106, 0.62)" },
 ] as const;
 
 function pickColor(): string {
@@ -163,6 +172,7 @@ function createStars(width: number, height: number): Star[] {
       opacity: 0.35 + Math.random() * 0.65,
       color: pickColor(),
       blur: Math.random() < 0.2 ? 2 + Math.random() * 7 : 0,
+      glowTexture: null,
       glint: index < 8,
       depthLayer: (index % 3) as 0 | 1 | 2,
       cursorOffsetX: 0,
@@ -204,6 +214,30 @@ function createBackgroundStars(width: number, height: number): BackgroundStar[] 
     color: Math.random() > 0.72 ? "#b8d4f0" : "#f5f2ea",
     phase: Math.random() * TAU,
   }));
+}
+
+function createStarGlowTextures(): Map<string, HTMLCanvasElement> {
+  const textures = new Map<string, HTMLCanvasElement>();
+  const size = 64;
+  const center = size / 2;
+
+  for (const { color, glow } of starGlowColors) {
+    const texture = document.createElement("canvas");
+    texture.width = size;
+    texture.height = size;
+    const textureContext = texture.getContext("2d");
+    if (!textureContext) continue;
+
+    const gradient = textureContext.createRadialGradient(center, center, 0, center, center, center);
+    gradient.addColorStop(0, glow);
+    gradient.addColorStop(0.24, glow.replace("0.62)", "0.25)"));
+    gradient.addColorStop(1, glow.replace("0.62)", "0)"));
+    textureContext.fillStyle = gradient;
+    textureContext.fillRect(0, 0, size, size);
+    textures.set(color, texture);
+  }
+
+  return textures;
 }
 
 function createAccretionParticles(): AccretionParticle[] {
@@ -254,6 +288,7 @@ export default function HeroSculptureCanvas() {
     grainContext.putImageData(grainImage, 0, 0);
     const grainPattern = context.createPattern(grainCanvas, "repeat");
     const grainTransform = new DOMMatrix();
+    const starGlowTextures = createStarGlowTextures();
     const cometCanvas = document.createElement("canvas");
     cometCanvas.width = 256;
     cometCanvas.height = 12;
@@ -277,11 +312,9 @@ export default function HeroSculptureCanvas() {
     let accretionParticles: AccretionParticle[] = [];
     let nebulae: Nebula[] = [];
     let backgroundGlow: CanvasGradient | null = null;
-    let coolCoreGlow: CanvasGradient | null = null;
     let coreGlow: CanvasGradient | null = null;
     let ignitionGlow: CanvasGradient | null = null;
     let formationFlashGlow: CanvasGradient | null = null;
-    let vignette: CanvasGradient | null = null;
     let coreTexture: HTMLCanvasElement | null = null;
     let cursorPosition: { x: number; y: number } | null = null;
     const depthOffsetX = [0, 0, 0];
@@ -322,7 +355,7 @@ export default function HeroSculptureCanvas() {
     let flareStartedAt = 0;
     let nextFlareAt = startTime + INTRO_DURATION + 2_000 + Math.random() * 2_000;
     let rotation = 0;
-    let lastRotationTimestamp = startTime;
+    let lastFrameTimestamp = startTime;
     let lastGrainFrame = -1;
     let scrollProgress = 0;
     let scrollFrameId: number | null = null;
@@ -386,13 +419,14 @@ export default function HeroSculptureCanvas() {
     };
 
     const draw = (timestamp: number) => {
-      if (width < 1 || height < 1 || !backgroundGlow || !vignette) return;
-      context.clearRect(0, 0, width, height);
+      if (width < 1 || height < 1 || !backgroundGlow) return;
       context.fillStyle = backgroundGlow;
       context.fillRect(0, 0, width, height);
 
       const motionEnabled = !motionQuery.matches;
       const elapsed = Math.max(0, timestamp - startTime);
+      const frameDelta = clamp(timestamp - lastFrameTimestamp, 0, 100);
+      lastFrameTimestamp = timestamp;
       const centerX = width * 0.7;
       const centerY = Math.min(height * 0.5, Math.min(height, window.innerHeight) * 0.5);
       const scrollEase = smoothstep(scrollProgress);
@@ -400,14 +434,10 @@ export default function HeroSculptureCanvas() {
       const pointerY = cursorPosition ? (cursorPosition.y - centerY) / Math.max(1, height) : 0;
 
       if (motionEnabled) {
-        const delta = clamp(timestamp - lastRotationTimestamp, 0, 100);
-        lastRotationTimestamp = timestamp;
         if (elapsed >= INTRO_DURATION) {
           const speedMultiplier = 1 + scrollEase * 2;
-          rotation -= (delta / 1000) * (Math.PI / 180) * BASE_ROTATION_DEGREES_PER_SECOND * speedMultiplier;
+          rotation -= (frameDelta / 1000) * (Math.PI / 180) * BASE_ROTATION_DEGREES_PER_SECOND * speedMultiplier;
         }
-      } else {
-        lastRotationTimestamp = timestamp;
       }
 
       const backgroundParallaxX = motionEnabled ? pointerX * width * 0.018 : 0;
@@ -436,11 +466,8 @@ export default function HeroSculptureCanvas() {
 
       const corePulse = motionEnabled ? 0.5 + Math.sin(backgroundTime * (TAU / 8)) * 0.5 : 0.5;
       const coreVisibility = motionEnabled ? smoothstep((elapsed - CORE_IGNITION_AT) / 700) : 1;
-      if (coolCoreGlow && coreGlow && coreVisibility > 0) {
-        context.globalAlpha = coreVisibility * (0.12 + corePulse * 0.1);
-        context.fillStyle = coolCoreGlow;
-        context.fillRect(0, 0, width, height);
-        context.globalAlpha = coreVisibility * (0.13 + corePulse * 0.12);
+      if (coreGlow && coreVisibility > 0) {
+        context.globalAlpha = coreVisibility * (0.25 + corePulse * 0.2);
         context.fillStyle = coreGlow;
         context.fillRect(0, 0, width, height);
         context.globalAlpha = 1;
@@ -475,11 +502,13 @@ export default function HeroSculptureCanvas() {
       context.scale(spiralScale, spiralScale);
       context.translate(-centerX, -centerY);
 
+      const depthSmoothing = 1 - Math.exp(-frameDelta / DEPTH_SMOOTHING_TIME_MS);
+      const cursorSmoothing = 1 - Math.exp(-frameDelta / CURSOR_SMOOTHING_TIME_MS);
       for (let layer = 0; layer < 3; layer += 1) {
         const targetX = motionEnabled ? pointerX * width * 0.12 * DEPTH_PARALLAX_STRENGTH[layer] : 0;
         const targetY = motionEnabled ? pointerY * height * 0.12 * DEPTH_PARALLAX_STRENGTH[layer] : 0;
-        depthOffsetX[layer] += (targetX - depthOffsetX[layer]) * 0.08;
-        depthOffsetY[layer] += (targetY - depthOffsetY[layer]) * 0.08;
+        depthOffsetX[layer] += (targetX - depthOffsetX[layer]) * depthSmoothing;
+        depthOffsetY[layer] += (targetY - depthOffsetY[layer]) * depthSmoothing;
       }
 
       const completionBoost = motionEnabled && elapsed >= ARMS_COMPLETE_AT && elapsed < INTRO_DURATION
@@ -490,34 +519,49 @@ export default function HeroSculptureCanvas() {
         const formation = motionEnabled
           ? getStarFormationProgress(elapsed, star.formationDelay, star.formationDuration)
           : 1;
-        const remainingSpiral = star.spiralOffset * (1 - formation);
-        const targetOffsetX = star.targetX - centerX;
-        const targetOffsetY = star.targetY - centerY;
-        const arcTargetX = centerX + targetOffsetX * Math.cos(remainingSpiral) - targetOffsetY * Math.sin(remainingSpiral);
-        const arcTargetY = centerY + targetOffsetX * Math.sin(remainingSpiral) + targetOffsetY * Math.cos(remainingSpiral);
-        const driftAmount = (1 - formation) * 4;
-        const scatteredX = star.x + (motionEnabled ? Math.sin(backgroundTime * 0.32 + star.phase) * driftAmount : 0);
-        const scatteredY = star.y + (motionEnabled ? Math.cos(backgroundTime * 0.29 + star.phase) * driftAmount : 0);
-        const baseX = scatteredX + (arcTargetX - scatteredX) * formation;
-        const baseY = scatteredY + (arcTargetY - scatteredY) * formation;
+        let baseX = star.targetX;
+        let baseY = star.targetY;
+        if (formation < 1) {
+          const driftAmount = (1 - formation) * 4;
+          const scatteredX = star.x + (motionEnabled ? Math.sin(backgroundTime * 0.32 + star.phase) * driftAmount : 0);
+          const scatteredY = star.y + (motionEnabled ? Math.cos(backgroundTime * 0.29 + star.phase) * driftAmount : 0);
+          if (formation === 0) {
+            baseX = scatteredX;
+            baseY = scatteredY;
+          } else {
+            const remainingSpiral = star.spiralOffset * (1 - formation);
+            const targetOffsetX = star.targetX - centerX;
+            const targetOffsetY = star.targetY - centerY;
+            const arcTargetX = centerX + targetOffsetX * Math.cos(remainingSpiral) - targetOffsetY * Math.sin(remainingSpiral);
+            const arcTargetY = centerY + targetOffsetX * Math.sin(remainingSpiral) + targetOffsetY * Math.cos(remainingSpiral);
+            baseX = scatteredX + (arcTargetX - scatteredX) * formation;
+            baseY = scatteredY + (arcTargetY - scatteredY) * formation;
+          }
+        }
         if (cursorPosition && motionEnabled) {
           getStarCursorOffset(baseX, baseY, cursorPosition.x, cursorPosition.y, 190, 14 + star.size * 0.7, cursorOffset);
         } else {
           cursorOffset.x = 0;
           cursorOffset.y = 0;
         }
-        star.cursorOffsetX += (cursorOffset.x - star.cursorOffsetX) * 0.16;
-        star.cursorOffsetY += (cursorOffset.y - star.cursorOffsetY) * 0.16;
+        star.cursorOffsetX += (cursorOffset.x - star.cursorOffsetX) * cursorSmoothing;
+        star.cursorOffsetY += (cursorOffset.y - star.cursorOffsetY) * cursorSmoothing;
         const x = baseX + depthOffsetX[star.depthLayer] + star.cursorOffsetX;
         const y = baseY + depthOffsetY[star.depthLayer] + star.cursorOffsetY;
         star.currentX = x;
         star.currentY = y;
         const twinkle = motionEnabled ? getStarTwinkle(timestamp, star.speed, star.phase) : 1;
-        context.globalAlpha = star.opacity * (0.1 + formation * 0.9) * twinkle * completionBoost;
+        const starAlpha = star.opacity * (0.1 + formation * 0.9) * twinkle * completionBoost;
+        if (star.glowTexture) {
+          const glowSize = Math.max(star.size * 2, star.blur * 6);
+          context.globalAlpha = starAlpha * 0.8;
+          context.drawImage(star.glowTexture, x - glowSize / 2, y - glowSize / 2, glowSize, glowSize);
+        }
+        context.globalAlpha = starAlpha;
         context.fillStyle = star.color;
-        if (star.blur > 0) {
+        if (star.glint) {
           context.shadowColor = star.color;
-          context.shadowBlur = star.blur;
+          context.shadowBlur = star.size * 1.5;
         } else {
           context.shadowBlur = 0;
         }
@@ -539,8 +583,8 @@ export default function HeroSculptureCanvas() {
 
         const lockAge = elapsed - star.formationDelay - star.formationDuration;
         if (motionEnabled && lockAge >= 0 && lockAge < 420) {
-          const travelX = arcTargetX - star.x;
-          const travelY = arcTargetY - star.y;
+          const travelX = star.targetX - star.x;
+          const travelY = star.targetY - star.y;
           const travelLength = Math.max(1, Math.hypot(travelX, travelY));
           const trailLength = 3 + star.size * 1.5;
           context.globalAlpha = (1 - lockAge / 420) * 0.55;
@@ -591,8 +635,6 @@ export default function HeroSculptureCanvas() {
 
       if (motionEnabled && elapsed >= INTRO_DURATION && accretionParticles.length > 0) {
         context.globalCompositeOperation = "lighter";
-        context.shadowColor = "#e8b96a";
-        context.shadowBlur = 5;
         for (const particle of accretionParticles) {
           const progress = ((elapsed - INTRO_DURATION) / particle.duration + particle.phase) % 1;
           const radiusProgress = 0.05 + (1 - progress) * 0.9;
@@ -608,7 +650,6 @@ export default function HeroSculptureCanvas() {
           context.arc(particleX, particleY, particle.size, 0, TAU);
           context.fill();
         }
-        context.shadowBlur = 0;
         context.globalAlpha = 1;
         context.globalCompositeOperation = "source-over";
       }
@@ -708,8 +749,6 @@ export default function HeroSculptureCanvas() {
         context.globalAlpha = 1;
       }
 
-      context.fillStyle = vignette;
-      context.fillRect(0, 0, width, height);
       if (grainPattern) {
         if (motionEnabled) {
           const grainFrame = Math.floor(timestamp / 120);
@@ -766,18 +805,18 @@ export default function HeroSculptureCanvas() {
       canvas.height = nextHeight;
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       backgroundGlow = context.createLinearGradient(0, 0, 0, height);
-      backgroundGlow.addColorStop(0, "#0a0e1f");
+      backgroundGlow.addColorStop(0, "#080b18");
+      backgroundGlow.addColorStop(0.16, "#090d1c");
       backgroundGlow.addColorStop(0.56, "#070a16");
-      backgroundGlow.addColorStop(1, "#03040a");
+      backgroundGlow.addColorStop(0.84, "#04060c");
+      backgroundGlow.addColorStop(1, "#020308");
       const coreCenterY = Math.min(height * 0.5, Math.min(height, window.innerHeight) * 0.5);
-      coolCoreGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.38);
-      coolCoreGlow.addColorStop(0, "rgba(132, 164, 255, 0.14)");
-      coolCoreGlow.addColorStop(0.36, "rgba(97, 120, 219, 0.08)");
-      coolCoreGlow.addColorStop(1, "rgba(97, 120, 219, 0)");
-      coreGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.18);
-      coreGlow.addColorStop(0, "rgba(255, 231, 171, 0.8)");
-      coreGlow.addColorStop(0.2, "rgba(231, 174, 72, 0.28)");
-      coreGlow.addColorStop(1, "rgba(231, 174, 72, 0)");
+      coreGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.38);
+      coreGlow.addColorStop(0, "rgba(255, 244, 205, 0.8)");
+      coreGlow.addColorStop(0.08, "rgba(231, 174, 72, 0.35)");
+      coreGlow.addColorStop(0.18, "rgba(200, 193, 180, 0.18)");
+      coreGlow.addColorStop(0.36, "rgba(132, 164, 255, 0.08)");
+      coreGlow.addColorStop(1, "rgba(132, 164, 255, 0)");
       ignitionGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.3);
       ignitionGlow.addColorStop(0, "rgba(255, 248, 221, 0.95)");
       ignitionGlow.addColorStop(0.12, "rgba(255, 211, 123, 0.7)");
@@ -814,12 +853,12 @@ export default function HeroSculptureCanvas() {
           coreTextureContext.stroke();
         }
       }
-      vignette = context.createLinearGradient(0, 0, 0, height);
-      vignette.addColorStop(0, "rgba(0, 0, 0, 0.22)");
-      vignette.addColorStop(0.16, "rgba(0, 0, 0, 0)");
-      vignette.addColorStop(0.84, "rgba(0, 0, 0, 0)");
-      vignette.addColorStop(1, "rgba(0, 0, 0, 0.24)");
       stars = createStars(width, height);
+      for (const star of stars) {
+        star.glowTexture = star.blur > 0 && (star.glint || star.size > 4.5)
+          ? starGlowTextures.get(star.color) ?? null
+          : null;
+      }
       backgroundStars = createBackgroundStars(width, height);
       accretionParticles = createAccretionParticles();
       nebulae = createNebulae(width, height);
@@ -844,7 +883,7 @@ export default function HeroSculptureCanvas() {
         nextMeteorAt = Math.max(performance.now(), startTime + INTRO_DURATION) + randomMeteorDelay();
         nextFlareAt = Math.max(performance.now(), startTime + INTRO_DURATION) + 2_000 + Math.random() * 2_000;
       }
-      lastRotationTimestamp = performance.now();
+      lastFrameTimestamp = performance.now();
       if (!document.hidden) draw(performance.now());
       if (motionQuery.matches) animationLoop.pause();
       else animationLoop.wake();

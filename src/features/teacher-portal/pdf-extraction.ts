@@ -193,13 +193,31 @@ function splitPageText(text: string, maxLength = 6000): string[] {
   const paragraphs = text.split(/\n\s*\n/).map((part) => part.trim()).filter((part) => part.length >= 20);
   const pieces = paragraphs.length > 0 ? paragraphs : text.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter((part) => part.length >= 20);
   const result: string[] = [];
+  let current = "";
+
+  const flush = () => {
+    if (current.length >= 20) result.push(current);
+    current = "";
+  };
+
   for (const piece of pieces) {
-    if (piece.length <= maxLength) {
-      result.push(piece);
+    if (piece.length > maxLength) {
+      flush();
+      for (let start = 0; start < piece.length; start += maxLength) {
+        const segment = piece.slice(start, start + maxLength).trim();
+        if (segment.length >= 20) result.push(segment);
+      }
       continue;
     }
-    for (let start = 0; start < piece.length; start += maxLength) result.push(piece.slice(start, start + maxLength).trim());
+
+    const separator = current.length > 0 ? " " : "";
+    if (current.length + separator.length + piece.length <= maxLength) current += separator + piece;
+    else {
+      flush();
+      current = piece;
+    }
   }
+  flush();
   return result.filter((piece) => piece.length >= 20);
 }
 

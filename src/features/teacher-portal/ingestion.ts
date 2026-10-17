@@ -26,7 +26,22 @@ function splitLongBlock(block: string): string[] {
 export function chunkText(documentId: string, documentName: string, text: string, topic?: string): SourceChunk[] {
   const paragraphs = text.replace(/\r/g, "").split(/\n\s*\n/).map((part) => part.trim()).filter((part) => part.length >= 20);
   const pieces = paragraphs.length > 0 ? paragraphs : text.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter((part) => part.length >= 20);
-  return pieces.flatMap((piece) => splitLongBlock(piece)).flatMap((content, index) => {
+  const windows: string[] = [];
+  let current = "";
+  for (const piece of pieces) {
+    const pieceChunks = splitLongBlock(piece);
+    for (const pieceChunk of pieceChunks) {
+      const separator = current.length > 0 ? " " : "";
+      if (current.length + separator.length + pieceChunk.length <= MAX_TEXT_CHUNK_LENGTH) current += separator + pieceChunk;
+      else {
+        if (current.length >= 20) windows.push(current);
+        current = pieceChunk;
+      }
+    }
+  }
+  if (current.length >= 20) windows.push(current);
+
+  return windows.flatMap((content, index) => {
     const chunk = {
       chunkId: `${documentId}-${index + 1}`,
       documentId,

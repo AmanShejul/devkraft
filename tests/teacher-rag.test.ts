@@ -14,6 +14,7 @@ describe("teacher document RAG", () => {
     expect(chunks.length).toBe(2);
     expect(chunks[0].documentId).toBe("doc-a");
     expect(chunks[0].page).toBeNull();
+    expect(chunks[0].content).toContain("initialization");
   });
 
   it("preserves long pasted material across bounded chunks", () => {
@@ -26,6 +27,15 @@ describe("teacher document RAG", () => {
     expect(longChunks.every((chunk) => chunk.content.length <= 12000)).toBe(true);
     expect(longChunks.map((chunk) => chunk.content).join(" ")).toContain(firstMarker);
     expect(longChunks.map((chunk) => chunk.content).join(" ")).toContain(lastMarker);
+  });
+
+  it("coalesces sentence-based notes so retrieval keeps enough source context", () => {
+    const notes = Array.from({ length: 120 }, (_, index) => `Note ${index} explains how the algorithm relates to its data structure.`).join(" ");
+    const chunks = chunkText("doc-notes", "notes.txt", notes);
+
+    expect(chunks.length).toBeLessThan(10);
+    expect(chunks.map((chunk) => chunk.content).join(" ")).toContain("Note 0");
+    expect(chunks.map((chunk) => chunk.content).join(" ")).toContain("Note 119");
   });
 
   it("retrieves only authorized document chunks and ranks topic overlap", () => {
