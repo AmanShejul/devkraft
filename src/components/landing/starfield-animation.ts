@@ -12,7 +12,7 @@ export function getStarFormationTiming(normalizedRadius: number, isCore: boolean
     return { delayMs: 2_000 + normalizedRadius * 300, durationMs: 1_000 };
   }
 
-  return { delayMs: 3_500 + normalizedRadius * 1_900, durationMs: 700 };
+  return { delayMs: 3_500 + normalizedRadius * 2_600, durationMs: 700 };
 }
 
 type HeroBounds = {

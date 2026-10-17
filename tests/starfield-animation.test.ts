@@ -26,7 +26,7 @@ describe("starfield twinkle", () => {
       expect(core.delayMs).toBeGreaterThanOrEqual(2_000);
       expect(core.delayMs + core.durationMs).toBeLessThan(3_500);
       expect(innerArm.delayMs).toBeGreaterThanOrEqual(3_500);
-      expect(outerArm.delayMs + outerArm.durationMs).toBeLessThanOrEqual(7_000);
+      expect(outerArm.delayMs + outerArm.durationMs + 150).toBeLessThanOrEqual(7_000);
     });
   });
 

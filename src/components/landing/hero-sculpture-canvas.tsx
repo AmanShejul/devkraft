@@ -854,7 +854,8 @@ export default function HeroSculptureCanvas() {
       try {
         resizeAndPaint();
       } finally {
-        animationLoop.wake();
+        if (motionQuery.matches) animationLoop.pause();
+        else animationLoop.wake();
       }
     };
     const onPointerMove = (event: PointerEvent) => {
