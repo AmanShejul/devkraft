@@ -20,8 +20,8 @@ const config: Config = {
       },
       boxShadow: { card: "none" },
       fontFamily: {
-        sans: ["var(--font-manrope)", "Arial", "sans-serif"],
-        display: ["var(--font-display)", "var(--font-manrope)", "Arial", "sans-serif"],
+        sans: ["var(--font-serif)", "Georgia", "Times New Roman", "serif"],
+        display: ["var(--font-display)", "var(--font-serif)", "Georgia", "serif"],
         mono: ["var(--font-mono)", "monospace"],
       },
     },
