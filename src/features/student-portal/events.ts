@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { assertLocalPersistenceAllowed } from "@/lib/persistence";
 
 export type LearningEventType = "topic_opened" | "diagnostic_completed" | "explanation_viewed" | "concept_revisited" | "practice_completed" | "topic_completed";
 
@@ -18,6 +19,7 @@ export type StudentLearningEvent = {
 const eventsPath = path.join(process.cwd(), ".data", "student-portal", "events.json");
 
 export async function listDemoStudentEvents(learnerId?: string): Promise<StudentLearningEvent[]> {
+  assertLocalPersistenceAllowed("Student learning events");
   try {
     const parsed: unknown = JSON.parse(await readFile(eventsPath, "utf8"));
     if (!Array.isArray(parsed)) return [];

@@ -5,6 +5,7 @@ import { listDemoStudentEvents } from "@/features/student-portal/events";
 import { getStudentSession } from "@/lib/auth/student-session";
 import { LEARNING_CONFIG } from "@/config/learning";
 import { apiFailure, apiSuccess } from "@/types/api";
+import { persistenceErrorDetails } from "@/lib/persistence";
 
 export async function GET(): Promise<Response> {
   const session = await getStudentSession();
@@ -90,6 +91,7 @@ export async function GET(): Promise<Response> {
       recommendedNext: nextTopic ? { topicId: nextTopic.topicId, topic: nextTopic.topic, subject: nextTopic.subject, stage: nextTopic.diagnosticAttempts === 0 ? "diagnostic" : "practice" } : null,
     }));
   } catch (error) {
-    return Response.json(apiFailure("STUDENT_PROGRESS_READ_FAILED", error instanceof Error ? error.message : "Student progress could not be loaded."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "STUDENT_PROGRESS_READ_FAILED", error instanceof Error ? error.message : "Student progress could not be loaded.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 }

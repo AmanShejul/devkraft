@@ -5,6 +5,7 @@ import { touchDemoStudentProfile } from "@/features/student-portal/demo-profile-
 import { getStudentSession } from "@/lib/auth/student-session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { apiFailure, apiSuccess } from "@/types/api";
+import { persistenceErrorDetails } from "@/lib/persistence";
 
 const eventSchema = z.object({
   assignmentId: z.string().min(1),
@@ -46,6 +47,7 @@ export async function POST(request: Request): Promise<Response> {
     if (error) throw new Error(`Could not save learning event: ${error.message}`);
     return Response.json(apiSuccess({ id: data.id, occurredAt: data.occurred_at }));
   } catch (error) {
-    return Response.json(apiFailure("LEARNING_EVENT_SAVE_FAILED", error instanceof Error ? error.message : "Learning activity could not be saved."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "LEARNING_EVENT_SAVE_FAILED", error instanceof Error ? error.message : "Learning activity could not be saved.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 }

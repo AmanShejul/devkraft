@@ -6,6 +6,7 @@ import type { ConceptMastery } from "@/types/domain";
 import { readBoundedJson } from "@/features/code-execution/handler";
 import { validateCodeExecutionRequest } from "@/features/code-execution/validation";
 import { getCodeExecutionProvider } from "@/lib/execution/provider";
+import { persistenceErrorDetails } from "@/lib/persistence";
 
 function executionFailure(kind: string): Response {
   switch (kind) {
@@ -44,7 +45,8 @@ export async function POST(request: Request): Promise<Response> {
     currentMastery = await getLearnerMastery(learnerId) ?? [];
   } catch (error) {
     console.error("Could not load mastery for code submission.", error);
-    return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Hidden tests ran, but saved mastery could not be loaded."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "MASTERY_PERSISTENCE_FAILED", "Hidden tests ran, but saved mastery could not be loaded.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 
   const mastery = updateMissionMasteryFromSubmission(currentMastery, result.passed / result.total >= 0.6);
@@ -52,7 +54,8 @@ export async function POST(request: Request): Promise<Response> {
     await saveLearnerMastery(learnerId, mastery);
   } catch (error) {
     console.error("Could not save mastery for code submission.", error);
-    return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Hidden tests ran, but mastery could not be saved."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "MASTERY_PERSISTENCE_FAILED", "Hidden tests ran, but mastery could not be saved.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 
   return Response.json(apiSuccess({ ...result, mastery }));

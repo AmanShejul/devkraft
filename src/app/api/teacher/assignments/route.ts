@@ -4,6 +4,7 @@ import { apiFailure, apiSuccess } from "@/types/api";
 import { generatedQuestionListSchema, learningStageSchema, questionStatusSchema, visualExplanationSchema, type TeacherQuizSet } from "@/features/teacher-portal/contracts";
 import { listTeacherAssignments, saveAssignment } from "@/features/teacher-portal/server-store";
 import { getTeacherSession } from "@/lib/auth/teacher-session";
+import { persistenceErrorDetails } from "@/lib/persistence";
 
 const assignmentSchema = z.object({
   id: z.string().min(1).optional(), topicId: z.string().uuid().optional(), title: z.string().min(1).max(200), subject: z.string().min(1).max(120), topic: z.string().min(1).max(120),
@@ -25,7 +26,11 @@ async function teacherId(): Promise<string> {
 
 export async function GET(): Promise<Response> {
   try { return Response.json(apiSuccess(await listTeacherAssignments(await teacherId()))); }
-  catch (error) { return Response.json(apiFailure("TEACHER_AUTH_REQUIRED", error instanceof Error ? error.message : "Teacher access is required."), { status: 401 }); }
+  catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHENTICATED") return Response.json(apiFailure("TEACHER_AUTH_REQUIRED", "Teacher access is required."), { status: 401 });
+    const failure = persistenceErrorDetails(error, "TEACHER_ASSIGNMENTS_READ_FAILED", error instanceof Error ? error.message : "Teacher assignments could not be loaded.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
+  }
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -54,5 +59,9 @@ export async function POST(request: Request): Promise<Response> {
     };
     await saveAssignment(assignment);
     return Response.json(apiSuccess(assignment));
-  } catch (error) { return Response.json(apiFailure("ASSIGNMENT_SAVE_FAILED", error instanceof Error ? error.message : "Assignment could not be saved."), { status: 500 }); }
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHENTICATED") return Response.json(apiFailure("TEACHER_AUTH_REQUIRED", "Teacher access is required."), { status: 401 });
+    const failure = persistenceErrorDetails(error, "ASSIGNMENT_SAVE_FAILED", error instanceof Error ? error.message : "Assignment could not be saved.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
+  }
 }

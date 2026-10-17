@@ -2,6 +2,7 @@ import { listTeacherAssignments, listTeacherLearningRecords } from "@/features/t
 import { LEARNING_CONFIG } from "@/config/learning";
 import { getTeacherSession } from "@/lib/auth/teacher-session";
 import { apiFailure, apiSuccess } from "@/types/api";
+import { persistenceErrorDetails } from "@/lib/persistence";
 
 async function authenticatedTeacherId(): Promise<string> {
   const session = await getTeacherSession();
@@ -73,6 +74,7 @@ export async function GET(): Promise<Response> {
       },
     }));
   } catch (error) {
-    return Response.json(apiFailure("TEACHER_ANALYTICS_FAILED", error instanceof Error ? error.message : "Student analytics could not be loaded."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "TEACHER_ANALYTICS_FAILED", error instanceof Error ? error.message : "Student analytics could not be loaded.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 }

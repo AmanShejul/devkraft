@@ -11,6 +11,7 @@ import type { ConceptMastery, VivaEvaluation } from "@/types/domain";
 import { generateVivaQuestions } from "@/features/viva/viva";
 import { readBoundedJson } from "@/features/code-execution/handler";
 import { validateCodeExecutionRequest } from "@/features/code-execution/validation";
+import { persistenceErrorDetails } from "@/lib/persistence";
 
 interface VivaEvaluateRequest {
   language: "typescript" | "javascript" | "python";
@@ -74,7 +75,8 @@ export async function POST(request: Request): Promise<Response> {
     currentMastery = await getLearnerMastery(learnerId) ?? [];
   } catch (error) {
     console.error("Could not load mastery for viva evaluation.", error);
-    return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Viva answers were evaluated, but saved mastery could not be loaded."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "MASTERY_PERSISTENCE_FAILED", "Viva answers were evaluated, but saved mastery could not be loaded.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 
   let claimed: boolean;
@@ -82,7 +84,8 @@ export async function POST(request: Request): Promise<Response> {
     claimed = await claimVivaAttemptOnce(learnerId, "countdown");
   } catch (error) {
     console.error("Could not record viva attempt.", error);
-    return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Viva answers were evaluated, but the counted attempt could not be recorded."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "MASTERY_PERSISTENCE_FAILED", "Viva answers were evaluated, but the counted attempt could not be recorded.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 
   const update = updateVivaMastery(currentMastery, evaluations, new Date(), !claimed);
@@ -103,7 +106,8 @@ export async function POST(request: Request): Promise<Response> {
     } catch (releaseError) {
       console.error("Could not release the failed viva attempt claim.", releaseError);
     }
-    return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Viva answers were evaluated, but mastery could not be saved."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "MASTERY_PERSISTENCE_FAILED", "Viva answers were evaluated, but mastery could not be saved.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 
   return Response.json(apiSuccess({ evaluations, ...update }));

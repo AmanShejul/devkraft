@@ -2,6 +2,7 @@ import { scoreAssessment } from "@/features/assessments";
 import { getLearnerMastery, getOrCreateLearnerId, saveLearnerMastery } from "@/features/assessments/mastery-store";
 import { apiFailure, apiSuccess } from "@/types/api";
 import type { AssessmentAnswer } from "@/types/domain";
+import { persistenceErrorDetails } from "@/lib/persistence";
 
 export async function POST(request: Request): Promise<Response> {
   let body: unknown;
@@ -29,7 +30,8 @@ export async function POST(request: Request): Promise<Response> {
     currentMastery = await getLearnerMastery(learnerId) ?? [];
   } catch (error) {
     console.error("Learner mastery could not be loaded.", error);
-    return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Your assessment could not load saved mastery."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "MASTERY_PERSISTENCE_FAILED", "Your assessment could not load saved mastery.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 
   let result;
@@ -45,6 +47,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(apiSuccess({ ...result, persistence: "saved" as const }));
   } catch (error) {
     console.error("Assessment mastery could not be persisted.", error);
-    return Response.json(apiFailure("MASTERY_PERSISTENCE_FAILED", "Your assessment was scored, but mastery could not be saved."), { status: 500 });
+    const failure = persistenceErrorDetails(error, "MASTERY_PERSISTENCE_FAILED", "Your assessment was scored, but mastery could not be saved.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
   }
 }

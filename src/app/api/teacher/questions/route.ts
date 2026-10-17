@@ -8,6 +8,7 @@ import { retrieveRelevantChunks } from "@/features/teacher-portal/retrieval";
 import { saveDocument } from "@/features/teacher-portal/server-store";
 import { generateWithFallback } from "@/features/teacher-portal/generation-provider";
 import { generateOllamaJson } from "@/lib/ai/ollama";
+import { persistenceErrorDetails } from "@/lib/persistence";
 
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 const MODEL = "gemini-3.8-flash";
@@ -289,8 +290,9 @@ export async function POST(request: Request): Promise<Response> {
   const createdAt = new Date().toISOString();
   try {
     await saveDocument({ id: documentId, ownerId, name: file.name, mimeType: file.type || (isPdf ? "application/pdf" : isPptx ? PPTX_MIME_TYPE : "text/plain"), status: "processing", createdAt, chunks: [] });
-  } catch {
-    return respond(apiFailure("DOCUMENT_SAVE_FAILED", "The document could not be registered for processing."), 500);
+  } catch (error) {
+    const failure = persistenceErrorDetails(error, "DOCUMENT_SAVE_FAILED", "The document could not be registered for processing.");
+    return respond(apiFailure(failure.code, failure.message), failure.status);
   }
   let chunks: SourceChunk[];
   try {

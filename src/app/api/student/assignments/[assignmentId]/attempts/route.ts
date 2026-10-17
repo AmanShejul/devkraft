@@ -8,6 +8,7 @@ import { getLearnerMastery, saveLearnerMastery } from "@/features/assessments/ma
 import { getAssignmentForAttempt, saveAttempt, type AttemptRecord } from "@/features/teacher-portal/server-store";
 import { scoreQuestions } from "@/features/teacher-portal/scoring";
 import { getStudentSession } from "@/lib/auth/student-session";
+import { persistenceErrorDetails } from "@/lib/persistence";
 
 const bodySchema = z.object({ idempotencyKey: z.string().min(8).max(120).optional(), answers: z.record(z.string(), z.string()) }).strict();
 
@@ -21,7 +22,10 @@ export async function POST(request: Request, context: { params: Promise<{ assign
   const id = session.id;
   const { assignmentId } = await context.params;
   let assignment;
-  try { assignment = await getAssignmentForAttempt(assignmentId, id, session.mode === "demo"); } catch (error) { return Response.json(apiFailure("ASSIGNMENT_READ_FAILED", error instanceof Error ? error.message : "Assignment could not be loaded."), { status: 500 }); }
+  try { assignment = await getAssignmentForAttempt(assignmentId, id, session.mode === "demo"); } catch (error) {
+    const failure = persistenceErrorDetails(error, "ASSIGNMENT_READ_FAILED", error instanceof Error ? error.message : "Assignment could not be loaded.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
+  }
   if (!assignment) return Response.json(apiFailure("ASSIGNMENT_UNAVAILABLE", "This assignment is not currently available."), { status: 404 });
   const answers = parsed.data.answers;
   if (assignment.questions.some((question) => !(question.id in answers))) return Response.json(apiFailure("INCOMPLETE_SUBMISSION", "Answer every question before submitting."), { status: 400 });
@@ -43,5 +47,8 @@ export async function POST(request: Request, context: { params: Promise<{ assign
     const masteryByConcept = Object.fromEntries(mastery.map((item) => [item.conceptId, item.probability]));
     const next = selectNextMission(LEARNING_MISSIONS, masteryByConcept, LEARNING_CONFIG.masteryThreshold);
     return Response.json(apiSuccess({ duplicate: false, learningStage: attempt.learningStage, score: attempt.score, total: attempt.total, responses, feedback: feedbackFor(responses), mastery, recommendation: next ? { mission: next.mission, reason: `Your latest ${assignment.topic} answers updated ${next.mission.conceptId} mastery; this mission is the least-mastered eligible prerequisite path.` } : null }));
-  } catch (error) { return Response.json(apiFailure("SUBMISSION_SAVE_FAILED", error instanceof Error ? error.message : "Your attempt could not be saved."), { status: 500 }); }
+  } catch (error) {
+    const failure = persistenceErrorDetails(error, "SUBMISSION_SAVE_FAILED", error instanceof Error ? error.message : "Your attempt could not be saved.");
+    return Response.json(apiFailure(failure.code, failure.message), { status: failure.status });
+  }
 }

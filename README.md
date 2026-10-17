@@ -16,7 +16,7 @@ SkillPath is an adaptive coding-learning workspace for students and teachers. Th
 - Local concept-note keyword retrieval and separate deterministic mentor heuristics. No generated explanation is connected.
 - Typed domain and API contracts, Supabase SSR/browser client helpers, and adaptive-learning unit tests.
 
-Local development can run without Supabase. No sample learner, class, assignment, or activity records are created automatically. Assessment mastery is saved to `.data/learner-mastery/` only after a local learner completes activity.
+Local development can run without Supabase. No sample learner, class, assignment, or activity records are created automatically. Assessment mastery is saved to `.data/learner-mastery/` only after a local learner completes activity; production requires Supabase and never treats that local directory as durable storage.
 
 ## Start locally
 

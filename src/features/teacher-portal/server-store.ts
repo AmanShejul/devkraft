@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
+import { assertLocalPersistenceAllowed } from "@/lib/persistence";
 import { visualExplanationSchema, type GeneratedQuestion, type TeacherDocument, type TeacherQuizSet } from "./contracts";
 import { listDemoStudentProfiles } from "@/features/student-portal/demo-profile-store";
 import { listDemoStudentEvents, type StudentLearningEvent } from "@/features/student-portal/events";
@@ -27,6 +28,7 @@ const EMPTY_STATE: DemoState = { documents: [], assignments: [], attempts: [] };
 const statePath = path.join(process.cwd(), ".data", "teacher-portal", "state.json");
 
 async function readDemoState(): Promise<DemoState> {
+  assertLocalPersistenceAllowed("Teacher and student records");
   try {
     const parsed: unknown = JSON.parse(await readFile(statePath, "utf8"));
     if (!parsed || typeof parsed !== "object") return { ...EMPTY_STATE };
@@ -330,7 +332,7 @@ export async function listTeacherLearningRecords(ownerId: string): Promise<Array
     return { student: { ...profile, lastActivityAt }, attempts: studentAttempts, events: studentEvents };
   }).filter((record) => record.attempts.length > 0 || record.events.length > 0);
 
-  if (process.env.STUDENT_DEMO_MODE === "true") {
+  if (process.env.NODE_ENV !== "production" && process.env.STUDENT_DEMO_MODE === "true") {
     const local = await readDemoState();
     const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
     const localAttempts = local.attempts.filter((attempt) => quizIds.includes(attempt.assignmentId));
@@ -419,7 +421,7 @@ export async function listTeacherAttempts(ownerId: string): Promise<{ attempts: 
   }
   const attempts = (attemptRows ?? []).map((attempt) => rowToAttempt(attempt as Record<string, unknown>, responsesByAttempt.get(String(attempt.id)) ?? []));
   const profiles = (profileRows ?? []).map((profile) => ({ id: String(profile.id), email: String(profile.email), createdAt: String(profile.created_at), lastActivityAt: String(profile.last_activity_at) }));
-  if (process.env.STUDENT_DEMO_MODE === "true") {
+  if (process.env.NODE_ENV !== "production" && process.env.STUDENT_DEMO_MODE === "true") {
     const local = await readDemoState();
     const demoProfiles = await listDemoStudentProfiles();
     const demoAttempts = local.attempts.filter((attempt) => quizIds.includes(attempt.assignmentId));

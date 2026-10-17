@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { assertLocalPersistenceAllowed } from "@/lib/persistence";
 
 export type DemoStudentProfile = {
   id: string;
@@ -25,6 +26,7 @@ export function normalizeStudentEmail(email: string): string {
 }
 
 async function readState(): Promise<DemoProfileState> {
+  assertLocalPersistenceAllowed("Student profiles");
   try {
     const value: unknown = JSON.parse(await readFile(getStatePath(), "utf8"));
     if (!value || typeof value !== "object" || !Array.isArray((value as { profiles?: unknown }).profiles)) return EMPTY_STATE;

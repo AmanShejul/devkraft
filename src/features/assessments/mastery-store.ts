@@ -5,10 +5,15 @@ import { cookies } from "next/headers";
 import type { ConceptMastery } from "@/types/domain";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isDemoStudentIdentity } from "@/lib/auth/student-session";
+import { assertLocalPersistenceAllowed } from "@/lib/persistence";
 
 const LEARNER_COOKIE = "skillpath_learner_id";
 const LEARNER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MISSION_ID_PATTERN = /^[a-z0-9-]{1,64}$/;
+
+function hasSupabaseClientConfig(): boolean {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+}
 
 function isConceptMasteryArray(value: unknown): value is ConceptMastery[] {
   return Array.isArray(value) && value.every((item) => {
@@ -80,9 +85,12 @@ async function readFileMastery(learnerId: string): Promise<ConceptMastery[] | nu
 }
 
 export async function getLearnerMastery(learnerId: string): Promise<ConceptMastery[] | null> {
-  const demoIdentity = await isDemoStudentIdentity(learnerId);
+  const demoIdentity = hasSupabaseClientConfig() && await isDemoStudentIdentity(learnerId);
   const supabase = demoIdentity ? null : await createSupabaseServerClient(learnerId);
-  if (!supabase) return readFileMastery(learnerId);
+  if (!supabase) {
+    assertLocalPersistenceAllowed("Learner mastery");
+    return readFileMastery(learnerId);
+  }
 
   const { data, error } = await supabase
     .from("learner_mastery")
@@ -97,7 +105,7 @@ export async function getLearnerMastery(learnerId: string): Promise<ConceptMaste
 
 export async function saveLearnerMastery(learnerId: string, mastery: readonly ConceptMastery[]): Promise<void> {
   if (!isConceptMasteryArray(mastery)) throw new TypeError("Invalid learner mastery data.");
-  const demoIdentity = await isDemoStudentIdentity(learnerId);
+  const demoIdentity = hasSupabaseClientConfig() && await isDemoStudentIdentity(learnerId);
   const supabase = demoIdentity ? null : await createSupabaseServerClient(learnerId);
   if (supabase) {
     const { error } = await supabase
@@ -107,6 +115,7 @@ export async function saveLearnerMastery(learnerId: string, mastery: readonly Co
     return;
   }
 
+  assertLocalPersistenceAllowed("Learner mastery");
   const filePath = masteryFilePath(learnerId);
   const directory = path.dirname(filePath);
   await mkdir(directory, { recursive: true });
@@ -119,7 +128,8 @@ export async function claimVivaAttemptOnce(learnerId: string, missionId: string)
   if (!LEARNER_ID_PATTERN.test(learnerId) || !MISSION_ID_PATTERN.test(missionId)) {
     throw new TypeError("Invalid learner or mission id.");
   }
-  const supabase = await createSupabaseServerClient(learnerId);
+  const demoIdentity = hasSupabaseClientConfig() && await isDemoStudentIdentity(learnerId);
+  const supabase = demoIdentity ? null : await createSupabaseServerClient(learnerId);
   if (supabase) {
     const { data, error } = await supabase
       .from("learner_viva_attempts")
@@ -133,6 +143,7 @@ export async function claimVivaAttemptOnce(learnerId: string, missionId: string)
     return data !== null;
   }
 
+  assertLocalPersistenceAllowed("Viva attempt records");
   const filePath = vivaAttemptFilePath(learnerId, missionId);
   await mkdir(path.dirname(filePath), { recursive: true });
   try {
@@ -148,7 +159,8 @@ export async function claimVivaAttemptOnce(learnerId: string, missionId: string)
 }
 
 export async function releaseVivaAttemptClaim(learnerId: string, missionId: string): Promise<void> {
-  const supabase = await createSupabaseServerClient(learnerId);
+  const demoIdentity = hasSupabaseClientConfig() && await isDemoStudentIdentity(learnerId);
+  const supabase = demoIdentity ? null : await createSupabaseServerClient(learnerId);
   if (supabase) {
     const { error } = await supabase
       .from("learner_viva_attempts")
@@ -159,6 +171,7 @@ export async function releaseVivaAttemptClaim(learnerId: string, missionId: stri
     return;
   }
 
+  assertLocalPersistenceAllowed("Viva attempt records");
   try {
     await unlink(vivaAttemptFilePath(learnerId, missionId));
   } catch (error) {
