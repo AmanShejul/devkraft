@@ -45,9 +45,16 @@ export function readLocalMasteryRecord(learnerId: string): LocalMasteryRecord {
   const record = parsed as Record<string, unknown>;
   const mastery = record.mastery;
   if (!Array.isArray(mastery) || !mastery.every(isConceptMastery)) throw new Error("Saved browser mastery has an invalid format.");
+
+  const vivaAttempts = record.vivaAttempts;
+  if (vivaAttempts !== undefined && (!Array.isArray(vivaAttempts) || !vivaAttempts.every((attempt) => typeof attempt === "string"))) {
+    throw new Error("Saved browser mastery has an invalid format.");
+  }
+
   return {
     mastery,
     ...(isAssessmentResult(record.assessmentResult) ? { assessmentResult: record.assessmentResult } : {}),
+    ...(vivaAttempts ? { vivaAttempts: vivaAttempts as string[] } : {}),
   };
 }
 

@@ -52,4 +52,14 @@ describe("browser mastery persistence", () => {
     });
     expect(mission?.mission.id).toBe("array-basics");
   });
+
+  it("preserves saved viva attempt records when reading a local mastery record", () => {
+    const storage = makeStorage();
+    vi.stubGlobal("window", { localStorage: storage });
+    const learnerId = "learner-demo-3";
+    const mastery = [{ conceptId: "variables", probability: 0.7 }];
+    writeLocalMasteryRecord(learnerId, { mastery, vivaAttempts: ["countdown"] });
+
+    expect(readLocalMasteryRecord(learnerId).vivaAttempts).toEqual(["countdown"]);
+  });
 });
