@@ -140,6 +140,45 @@ describe("teacher question API safety", () => {
     expect(mockFetch).toHaveBeenCalledOnce();
   });
 
+  it("still sends uploaded notes to Ollama when the teacher topic label is not literal source text", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "must-not-be-used");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("OLLAMA_BASE_URL", "http://ollama.test");
+    const mockFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const requestBody = JSON.parse(String(init?.body)) as { prompt: string };
+      const sourceChunkId = requestBody.prompt.match(/\[([^\s]+) \| page/)?.[1];
+      const options = ["queue", "stack", "array"];
+      return Response.json({ response: JSON.stringify({
+        questions: [
+          ["Which item is used here?", "queue"],
+          ["What does breadth-first search visit?", "vertices"],
+          ["Which traversal explores graph levels?", "breadth-first search"],
+          ["What does the queue hold during traversal?", "vertices"],
+        ].map(([prompt, correctAnswer]) => ({ prompt, options: [...options, correctAnswer], correctAnswer, explanation: `The notes explain ${correctAnswer} in the traversal process.`, sourceChunkId })),
+        visualExplanation: { title: "Breadth-first search", summary: "The traversal explores graph levels with a queue.", nodes: [
+          { id: "search", label: "Breadth-first search", description: "Explores graph levels.", sourceChunkId },
+          { id: "queue", label: "Queue", description: "Holds the next vertices.", sourceChunkId },
+        ], edges: [{ from: "search", to: "queue", label: "uses" }] },
+      }) });
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const form = new FormData();
+    form.set("file", new File(["Breadth-first search uses a queue to visit graph vertices level by level."], "notes.txt", { type: "text/plain" }));
+    form.set("topic", "Quantum mechanics");
+    form.set("generationPreference", "ollama");
+    form.set("count", "4");
+
+    const response = await POST(new Request("http://localhost/api/teacher/questions", { method: "POST", body: form }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.questions).toHaveLength(4);
+    expect(payload.data.questions[0].generationStatus).toBe("needs-review");
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
   it("returns a clear error for a diagnostic set below four questions without a count-only retry", async () => {
     vi.stubEnv("GEMINI_API_KEY", "");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");

@@ -37,7 +37,7 @@ const rawVisualExplanationSchema = z.object({
   nodes: z.array(z.object({ id: z.string().min(1).max(80), label: z.string().min(1).max(120), description: z.string().min(1).max(400), sourceChunkId: z.string().min(1) }).strict()).min(2).max(8),
   edges: z.array(z.object({ from: z.string().min(1).max(80), to: z.string().min(1).max(80), label: z.string().max(120) }).strict()).max(12),
 }).strict();
-const rawGenerationSchema = z.object({ questions: rawQuestionSchema, visualExplanation: rawVisualExplanationSchema.nullable() }).strict();
+const rawGenerationSchema = z.object({ questions: rawQuestionSchema, visualExplanation: rawVisualExplanationSchema.nullable().optional().default(null) }).strict();
 const ollamaGenerationSchema: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
@@ -45,6 +45,8 @@ const ollamaGenerationSchema: Record<string, unknown> = {
   properties: {
     questions: {
       type: "array",
+      minItems: 1,
+      maxItems: 20,
       items: {
         type: "object",
         additionalProperties: false,
@@ -376,8 +378,13 @@ export async function POST(request: Request): Promise<Response> {
     return respond(apiFailure(code, message), status);
   }
 
-  const relevantChunks = retrieveRelevantChunks(chunks, { documentIds: [documentId], topic: topicInput || undefined, objectives: objectives.split(/[,\n]/).map((item) => item.trim()).filter(Boolean), limit: 8 });
-  if (relevantChunks.length === 0) return respond(apiFailure("NO_RELEVANT_EVIDENCE", "No material matched the selected topic or objectives."), 422);
+  const retrievedChunks = retrieveRelevantChunks(chunks, { documentIds: [documentId], topic: topicInput || undefined, objectives: objectives.split(/[,\n]/).map((item) => item.trim()).filter(Boolean), limit: 8 });
+  // A teacher's topic label is often broader than the wording in their notes. If keyword
+  // retrieval finds no match, still use the uploaded document rather than failing before
+  // the model sees the content. The model remains constrained to these source chunks.
+  const relevantChunks = retrievedChunks.length > 0 ? retrievedChunks : chunks.filter((chunk) => chunk.documentId === documentId).slice(0, 8);
+  log("evidence_retrieved", { chunkCount: relevantChunks.length, fallbackToDocument: retrievedChunks.length === 0 });
+  if (relevantChunks.length === 0) return respond(apiFailure("NO_RELEVANT_EVIDENCE", "No readable material was found in the uploaded document."), 422);
   const evidence = relevantChunks.map((chunk) => `[${chunk.chunkId} | page ${chunk.page ?? "unknown"}]\n${chunk.content}`).join("\n\n");
   let questions: GeneratedQuestion[] | null = null;
   let visualExplanation: VisualExplanation | null = null;
@@ -388,7 +395,7 @@ export async function POST(request: Request): Promise<Response> {
       `Generate exactly ${count} multiple-choice questions for subject ${subject} and topic ${topic}.`,
       `Difficulty: ${difficulty}. ${direction ? `Teacher direction: ${direction}` : ""}`,
       objectives ? `Learning objectives: ${objectives}` : "",
-      "Use only the evidence supplied below. Do not invent facts, answer choices, page numbers, or quotations. sourceChunkId must be one of the supplied chunk IDs. correctAnswer must exactly equal one options string, character for character; copy the selected option into correctAnswer and never put a full source sentence there. Every explanation must be a useful sentence of at least 20 characters. Use plausible distractors, avoid duplicate questions, and ensure each question tests a distinct learning point.",
+      `Return exactly ${count} questions in one JSON object. Use only the evidence supplied below. Do not invent facts, answer choices, page numbers, or quotations. sourceChunkId must be one of the supplied chunk IDs. correctAnswer must exactly equal one options string, character for character; copy the selected option into correctAnswer and never put a full source sentence there. Every explanation must be a useful sentence of at least 20 characters. Use plausible distractors, avoid duplicate questions, and ensure each question tests a distinct learning point.`,
       "Also create a compact visual explanation of the material: 2 to 8 concept nodes, each tied to a supplied sourceChunkId, and edges that describe relationships such as leads to, contains, or depends on. Do not invent concepts outside the evidence.",
       "Evidence:\n" + evidence,
     ].join("\n");
@@ -430,13 +437,13 @@ export async function POST(request: Request): Promise<Response> {
         throw new Error("INVALID_GENERATED_RESPONSE");
       }
       const groundedQuestions = makeGroundedQuestions(parsedGenerated.data.questions, relevantChunks, subject, topic, difficulty);
-      if (!groundedQuestions || groundedQuestions.length < minimumQuestionCount || groundedQuestions.some((question) => question.generationStatus !== "grounded")) {
-        if (groundedQuestions && groundedQuestions.length < minimumQuestionCount) {
-          log("structured_output_validation_completed", { valid: false, reason: "insufficient_questions", questionCount: groundedQuestions.length, minimumQuestionCount, requestedCount: count });
-          throw new Error("INSUFFICIENT_GENERATED_QUESTIONS");
-        }
-        log("structured_output_validation_completed", { valid: false, reason: "ungrounded_questions", questionCount: groundedQuestions?.length ?? 0, requestedCount: count });
-        throw new Error("UNGROUNDED_GENERATED_QUESTIONS");
+      if (!groundedQuestions) {
+        log("structured_output_validation_completed", { valid: false, reason: "question_schema", requestedCount: count });
+        throw new Error("INVALID_GENERATED_QUESTIONS");
+      }
+      if (groundedQuestions.length < minimumQuestionCount) {
+        log("structured_output_validation_completed", { valid: false, reason: "insufficient_questions", questionCount: groundedQuestions.length, minimumQuestionCount, requestedCount: count });
+        throw new Error("INSUFFICIENT_GENERATED_QUESTIONS");
       }
       if (groundedQuestions.length > count) {
         log("structured_output_validation_completed", { valid: false, reason: "too_many_questions", questionCount: groundedQuestions.length, requestedCount: count });
@@ -452,7 +459,7 @@ export async function POST(request: Request): Promise<Response> {
         log("structured_output_validation_completed", { valid: false, reason: "duplicate_prompts" });
         throw new Error("DUPLICATE_GENERATED_QUESTIONS");
       }
-      log("structured_output_validation_completed", { valid: true, questionCount: validatedQuestions.data.length, requestedCount: count, partial: validatedQuestions.data.length < count });
+      log("structured_output_validation_completed", { valid: true, questionCount: validatedQuestions.data.length, needsReviewCount: validatedQuestions.data.filter((question) => question.generationStatus === "needs-review").length, requestedCount: count, partial: validatedQuestions.data.length < count });
       return { questions: validatedQuestions.data, visualExplanation: makeVisualExplanation(parsedGenerated.data.visualExplanation, relevantChunks) };
     });
     questions = result.result.questions;

@@ -16,6 +16,18 @@ describe("teacher document RAG", () => {
     expect(chunks[0].page).toBeNull();
   });
 
+  it("preserves long pasted material across bounded chunks", () => {
+    const firstMarker = "START_OF_LONG_NOTES";
+    const lastMarker = "END_OF_LONG_NOTES";
+    const longText = `${firstMarker} ${"A useful sentence about algorithms and data structures. ".repeat(180)} ${lastMarker}`;
+    const longChunks = chunkText("doc-long", "long.txt", longText);
+
+    expect(longChunks.length).toBeGreaterThan(1);
+    expect(longChunks.every((chunk) => chunk.content.length <= 12000)).toBe(true);
+    expect(longChunks.map((chunk) => chunk.content).join(" ")).toContain(firstMarker);
+    expect(longChunks.map((chunk) => chunk.content).join(" ")).toContain(lastMarker);
+  });
+
   it("retrieves only authorized document chunks and ranks topic overlap", () => {
     const result = retrieveRelevantChunks(chunks, { documentIds: ["doc-a"], topic: "Loops", objectives: ["condition update"], limit: 2 });
     expect(result).toHaveLength(1);

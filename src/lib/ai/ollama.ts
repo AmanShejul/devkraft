@@ -1,6 +1,8 @@
 const DEFAULT_BASE_URL = "http://127.0.0.1:11434";
 const DEFAULT_MODEL = "llama3.2:latest";
 const DEFAULT_TIMEOUT_MS = 90_000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
+const MAX_OUTPUT_TOKENS = 12_000;
 
 export type OllamaRequestDiagnostics = {
   signal?: AbortSignal;
@@ -27,6 +29,10 @@ export async function generateOllamaJson(
   const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout >= 1_000
     ? Math.min(configuredTimeout, 180_000)
     : DEFAULT_TIMEOUT_MS;
+  const configuredMaxOutputTokens = Number(process.env.OLLAMA_MAX_OUTPUT_TOKENS);
+  const maxOutputTokens = Number.isFinite(configuredMaxOutputTokens) && configuredMaxOutputTokens >= 256
+    ? Math.min(Math.floor(configuredMaxOutputTokens), MAX_OUTPUT_TOKENS)
+    : DEFAULT_MAX_OUTPUT_TOKENS;
   const controller = new AbortController();
   const startedAt = Date.now();
   let timedOut = false;
@@ -51,7 +57,7 @@ export async function generateOllamaJson(
           prompt,
           format: schema,
           stream: false,
-          options: { temperature: 0.2, num_predict: 4096 },
+          options: { temperature: 0.2, num_predict: maxOutputTokens },
         }),
         signal: controller.signal,
       });

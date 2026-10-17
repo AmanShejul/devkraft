@@ -23,6 +23,7 @@ describe("local Ollama JSON generation", () => {
       model: "llama3.2:latest",
       format: schema,
       stream: false,
+      options: { temperature: 0.2, num_predict: 8192 },
       prompt: "Make questions from these notes",
       system: expect.any(String),
     });

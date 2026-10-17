@@ -150,14 +150,27 @@ export function AssignmentStudio() {
       const response = await fetch("/api/teacher/questions", { method: "POST", body: form, signal: AbortSignal.timeout(240_000) });
       const payload = await response.json() as ApiResponse<{ questions: GeneratedQuestion[]; requestedCount: number; visualExplanation: VisualExplanation | null; sourceFile: string; difficulty: QuestionDifficulty; generationProvider: "gemini" | "ollama" }>;
       if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Questions could not be created right now." : payload.error.message);
-      setQuestions(payload.data.questions.map((question) => ({ id: question.id, prompt: question.prompt, answer: question.correctAnswer, source: question.source.excerpt, difficulty: question.difficulty, options: question.options, explanation: question.explanation, sourceDocumentId: question.source.documentId, sourcePage: question.source.page, reviewStatus: "draft", generationStatus: question.generationStatus })));
+      const generatedQuestions = payload.data.questions.map((question) => ({ id: question.id, prompt: question.prompt, answer: question.correctAnswer, source: question.source.excerpt, difficulty: question.difficulty, options: question.options, explanation: question.explanation, sourceDocumentId: question.source.documentId, sourcePage: question.source.page, reviewStatus: "draft" as const, generationStatus: question.generationStatus }));
+      setQuestions(generatedQuestions);
       setVisualExplanation(payload.data.visualExplanation);
       setContent((current) => current || `Questions generated from ${payload.data.sourceFile}.`);
       const providerName = payload.data.generationProvider === "ollama" ? "local Ollama" : "Gemini";
       setGenerationFailed(false);
       const questionCount = payload.data.questions.length;
       const questionCountLabel = questionCount < payload.data.requestedCount ? `${questionCount} of ${payload.data.requestedCount} requested` : `${questionCount}`;
-      setMessage(`Created ${questionCountLabel} editable questions from ${payload.data.sourceFile} using ${providerName}. Review them before adding the kit to the student portal.`);
+      const canPublishAutomatically = Boolean(title.trim() && subject.trim() && topic.trim())
+        && generatedQuestions.every((question) => question.generationStatus === "grounded")
+        && (learningStage === "diagnostic" ? generatedQuestions.length >= 4 && generatedQuestions.length <= 5 : generatedQuestions.length >= 6 && generatedQuestions.length <= 7);
+      if (canPublishAutomatically) {
+        const published = await saveAssignment("published", generatedQuestions, payload.data.visualExplanation);
+        if (published) {
+          setMessage(`Created ${questionCountLabel} questions from ${payload.data.sourceFile} using ${providerName} and published them to the student portal.`);
+        } else {
+          setGenerationFailed(true);
+        }
+      } else {
+        setMessage(`Created ${questionCountLabel} editable questions from ${payload.data.sourceFile} using ${providerName}. Add the assignment details and review any flagged questions before publishing.`);
+      }
     } catch (error) {
       setGenerationFailed(true);
       setMessage(error instanceof Error ? error.message : "Questions could not be created from this material.");
@@ -174,14 +187,14 @@ export function AssignmentStudio() {
     updateQuestion(id, { generationStatus: "grounded", reviewStatus: "reviewed" });
   }
 
-  async function saveAssignment(status: "draft" | "published") {
-    if (!title.trim() || !subject.trim() || !topic.trim() || questions.length === 0) {
+  async function saveAssignment(status: "draft" | "published", questionList = questions, visualGuide = visualExplanation): Promise<boolean> {
+    if (!title.trim() || !subject.trim() || !topic.trim() || questionList.length === 0) {
       setMessage("Add a title, subject, topic, and at least one question before saving.");
-      return;
+      return false;
     }
-    if (status === "published" && (learningStage === "diagnostic" ? questions.length < 4 || questions.length > 5 : questions.length < 6 || questions.length > 7)) {
+    if (status === "published" && (learningStage === "diagnostic" ? questionList.length < 4 || questionList.length > 5 : questionList.length < 6 || questionList.length > 7)) {
       setMessage(learningStage === "diagnostic" ? "A published diagnostic needs 4 to 5 questions. Generate or prepare more questions before publishing." : "A published follow-up set needs 6 to 7 questions. Generate or prepare more questions before publishing.");
-      return;
+      return false;
     }
 
     const existing = assignments.find((assignment) => assignment.id === assignmentId);
@@ -195,8 +208,8 @@ export function AssignmentStudio() {
       subject: subject.trim(),
       topic: topic.trim(),
       content: content.trim(),
-      questions,
-      visualExplanation,
+      questions: questionList,
+      visualExplanation: visualGuide,
       status,
       learningStage,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
@@ -204,7 +217,7 @@ export function AssignmentStudio() {
       ...(status === "published" ? { publishedAt: new Date().toISOString() } : {}),
     };
 
-    const payloadQuestions = questions.map((question) => ({
+    const payloadQuestions = questionList.map((question) => ({
       id: question.id, type: question.options && question.options.length > 1 ? "mcq" : "short-answer", prompt: question.prompt,
       ...(question.options && question.options.length > 1 ? { options: question.options } : {}), correctAnswer: question.answer,
       explanation: question.explanation ?? "Review the supporting source excerpt before using this answer.", subject: subject.trim(), topic: topic.trim(), conceptId: question.conceptId ?? null,
@@ -212,15 +225,17 @@ export function AssignmentStudio() {
       generationStatus: question.generationStatus ?? "needs-review", reviewStatus: status === "published" ? "published" : (question.reviewStatus ?? "draft"),
     }));
     try {
-      const response = await fetch("/api/teacher/assignments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: assignment.id, topicId: assignment.topicId, title: assignment.title, subject: assignment.subject, topic: assignment.topic, instructions: assignment.content, learningStage, status, visualExplanation, questions: payloadQuestions }) });
+      const response = await fetch("/api/teacher/assignments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: assignment.id, topicId: assignment.topicId, title: assignment.title, subject: assignment.subject, topic: assignment.topic, instructions: assignment.content, learningStage, status, visualExplanation: visualGuide, questions: payloadQuestions }) });
       const payload = await response.json() as ApiResponse<TeacherQuizSet>;
       if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Assignment could not be saved." : payload.error.message);
       setAssignmentId(payload.data.id);
       setTopicId(payload.data.topicId);
       setAssignments((current) => [{ ...assignment, id: payload.data.id, topicId: payload.data.topicId, learningStage, status }, ...current.filter((item) => item.id !== payload.data.id)]);
       setMessage(status === "published" ? "Assignment published to the student portal." : "Draft saved to the server.");
+      return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Assignment could not be saved.");
+      return false;
     }
   }
 
@@ -259,10 +274,10 @@ export function AssignmentStudio() {
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[.16em] text-brand">Assignment studio</p>
             <h2 className="mt-1 text-xl font-semibold tracking-[-.03em] text-ink">Create a student assignment</h2>
-            <p className="mt-1 text-xs leading-5 text-muted">Add teaching content, create editable question drafts, then publish when they are ready.</p>
+            <p className="mt-1 text-xs leading-5 text-muted">Add teaching content and generate a student-ready question set. Flagged questions remain drafts for review.</p>
           </div>
           </div>
-          <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em] text-white/45">Teacher review required</span>
+          <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em] text-white/45">Grounded sets auto-publish</span>
         </div>
 
         <input ref={fileInputRef} type="file" multiple accept=".pdf,.pptx,.txt,.md,.markdown,.csv,.js,.jsx,.ts,.tsx,.py,.java,.c,.cc,.cpp,.cs,.go,.rs,.rb,.php,.html,.css,.json,.sql" className="sr-only" onChange={(event) => void handleContentFiles(event)} />

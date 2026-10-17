@@ -74,8 +74,28 @@ export function LearningPortal() {
         if (active) setLoading(false);
       }
     };
+    const refreshPublishedAssignments = async () => {
+      try {
+        const assignmentData = await readApi<StudentAssignment[]>(await fetch("/api/student/assignments", { cache: "no-store" }));
+        if (active) setAssignments(assignmentData);
+      } catch (refreshError) {
+        if (active) setError(refreshError instanceof Error ? refreshError.message : "Published topics could not be refreshed.");
+      }
+    };
     void load();
-    return () => { active = false; };
+    const refreshOnFocus = () => void refreshPublishedAssignments();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshPublishedAssignments();
+    };
+    const refreshTimer = window.setInterval(refreshOnFocus, 15_000);
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, []);
 
   const groupedTopics = new Map<string, StudentAssignment[]>();
