@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { OnMount } from "@monaco-editor/react";
 import type { IDisposable } from "monaco-editor";
-import { Check, Play, Send, Settings2 } from "lucide-react";
+import { Check, Play, Settings2 } from "lucide-react";
 import type { ApiResponse } from "@/types/api";
 import { isCodeExecutionResult, type CodeExecutionRequest, type CodeExecutionResult, type SessionEvent, type VivaEvaluation, type VivaQuestion } from "@/types/domain";
 import type { CountDownTestResult } from "@/features/code-execution/count-down-tests";
@@ -235,6 +235,10 @@ export function CodeEditor() {
 
   function changeSourceCode(value: string) {
     setSourceCode(value);
+    setExecution(null);
+    setSubmission(null);
+    setErrorCode(undefined);
+    setMessage("Code changed. Run or submit the updated solution.");
     setVivaQuestions([]);
     setVivaAnswers({});
     setVivaEvaluations([]);
@@ -254,11 +258,6 @@ export function CodeEditor() {
       setVivaEvaluations([]);
       setVivaUnderstandingScore(null);
       setVivaMessage("");
-      if (action === "submit") {
-        const viva = prepareVivaForSubmit(submittedSource);
-        setVivaQuestions(viva.questions);
-        setVivaMessage(viva.message);
-      }
     }
     setPending(true);
     setExecution(null);
@@ -321,6 +320,11 @@ export function CodeEditor() {
         setSubmission(candidate.data);
         setProviderReady(true);
         setMessage(`${candidate.data.passed} of ${candidate.data.total} hidden tests passed. Loop mastery was updated.`);
+        if (action === "submit") {
+          const viva = prepareVivaForSubmit(submittedSource);
+          setVivaQuestions(viva.questions);
+          setVivaMessage(viva.message);
+        }
         return;
       }
 
@@ -421,7 +425,7 @@ export function CodeEditor() {
     }}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
       <div className="flex items-center gap-3"><span className="flex items-center gap-1.5" aria-hidden="true"><i className="size-2 rounded-full bg-[#ff6b62]" /><i className="size-2 rounded-full bg-[#f4bd4f]" /><i className="size-2 rounded-full bg-[#55c86a]" /></span><span className="text-xs font-bold text-white/85">solution</span><span className="text-xs text-white/40">/</span><label htmlFor="language" className="sr-only">Editor language</label><select id="language" value={language} disabled={pending} onChange={(event) => changeLanguage(event.target.value as CodeExecutionRequest["language"])} className="rounded-lg border border-white/10 bg-[#18262e] px-2.5 py-1.5 text-xs font-semibold text-white/80 disabled:opacity-60"><option value="typescript">TypeScript</option><option value="javascript">JavaScript</option><option value="python">Python</option></select></div>
-      <div className="flex items-center gap-2"><span title="Provider status" className="hidden items-center gap-1.5 text-[11px] text-[#e8bd64] sm:inline-flex"><Settings2 size={13} /> {providerReady ? "Provider ready" : "Provider not configured"}</span><MagneticButton><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className={`relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-60 ${pending ? "animate-pulse" : ""}`}>{pending && <span className="absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-white/35 animate-[shimmer_1.2s_infinite]" />}<Play size={13} fill="currentColor" /> {pending ? "Running" : "Run"}</button></MagneticButton><MagneticButton><button type="button" onClick={() => void requestExecution("submit")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg border border-brand/45 px-3 py-2 text-xs font-bold text-white/85 hover:bg-brand/[.08] disabled:opacity-60"><Send size={13} /> Submit</button></MagneticButton><button type="button" onClick={() => void requestExecution("hostile")} disabled={pending} className="rounded-lg border border-[#e8bd64]/40 px-2 py-2 text-[10px] font-semibold text-[#e8bd64] hover:bg-white/10 disabled:opacity-60">Try hostile input</button></div>
+      <div className="flex items-center gap-2"><span title="Provider status" className="hidden items-center gap-1.5 text-[11px] text-[#e8bd64] sm:inline-flex"><Settings2 size={13} /> {providerReady ? "Python runner ready" : language === "python" ? "Local Python runner" : "Server provider required"}</span><MagneticButton><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className={`relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-60 ${pending ? "animate-pulse" : ""}`}>{pending && <span className="absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-white/35 animate-[shimmer_1.2s_infinite]" />}<Play size={13} fill="currentColor" /> {pending ? "Running" : "Run"}</button></MagneticButton></div>
     </div>
     <div className="h-[390px] bg-[#10161a]">
       <Monaco height="390px" theme="vs-dark" language={language} value={sourceCode} onChange={(value) => changeSourceCode(value ?? "")} onMount={onEditorMount} options={{ minimap: { enabled: false }, readOnly: pending, fontSize: 13, tabSize: 2, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true, wordWrap: "on", lineNumbersMinChars: 3 }} />
@@ -473,7 +477,7 @@ export function CodeEditor() {
           : <p className="mt-2 text-xs text-white/50">Provider returned no output.</p>)}
       </div>
     </div>
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#10161a] px-4 py-2 text-[10px] uppercase tracking-[.12em] text-white/35"><span>{sourceCode.length.toLocaleString()} chars</span><span>{language}</span><span className="text-[#e8bd64]">{providerReady ? "Provider ready" : "Provider not configured"}</span></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#10161a] px-4 py-2 text-[10px] uppercase tracking-[.12em] text-white/35"><span>{sourceCode.length.toLocaleString()} chars</span><span>{language}</span><span className="text-[#e8bd64]">{providerReady ? "Python runner ready" : language === "python" ? "Local Python runner" : "Server provider required"}</span></div>
     </div>
     {timelineError && <p role="status" className="rounded-xl border border-[#725b36] bg-[#292318] px-4 py-3 text-xs text-[#e8d4ad]">{timelineError}</p>}
     <SessionReplay key={sessionId} sessionId={sessionId || "loading"} events={timeline} onStartNewAttempt={startNewAttempt} />

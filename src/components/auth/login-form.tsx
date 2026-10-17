@@ -99,12 +99,12 @@ export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleM
           </button>
         </form>
 
-        {!(role === "student" && demoMode) && <p className="mt-6 border-t border-[var(--line)] pt-5 text-xs text-muted">
+        <p className="mt-6 border-t border-[var(--line)] pt-5 text-xs text-muted">
           {role === "teacher" ? "Need student access?" : "Are you a teacher?"}{" "}
           <Link href={roleLoginPaths[otherRole]} className="font-semibold text-brand hover:text-brand-dark">
             Sign in as {otherRole}
           </Link>
-        </p>}
+        </p>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCursorPosition, getStarCursorOffset, getStarTwinkle } from "@/components/landing/starfield-animation";
+import { getCursorPosition, getStarCursorOffset, getStarFormationProgress, getStarTwinkle } from "@/components/landing/starfield-animation";
 
 describe("starfield twinkle", () => {
   it("has visible brightness variation over time and stays within a safe range", () => {
@@ -8,6 +8,24 @@ describe("starfield twinkle", () => {
 
     expect(Math.max(...brightness) - Math.min(...brightness)).toBeGreaterThan(0.5);
     expect(brightness.every((value) => value >= 0.38 && value <= 1)).toBe(true);
+  });
+
+  describe("star formation", () => {
+    it("holds dim stars before their staggered start, eases during travel, then locks at the target", () => {
+      expect(getStarFormationProgress(399, 400, 1_500)).toBe(0);
+      expect(getStarFormationProgress(1_150, 400, 1_500)).toBe(0.5);
+      expect(getStarFormationProgress(1_900, 400, 1_500)).toBe(1);
+      expect(getStarFormationProgress(0, 0, 1_500)).toBe(0);
+    });
+
+    it("supports core-first and radius-scaled arm timing within the intro duration", () => {
+      const coreStart = 500;
+      const outerArmStart = 400 + 2_000;
+      const longestTravel = 1_500 + 800;
+
+      expect(coreStart + longestTravel).toBeLessThan(4_700);
+      expect(outerArmStart + longestTravel).toBe(4_700);
+    });
   });
 
   describe("starfield cursor parallax", () => {

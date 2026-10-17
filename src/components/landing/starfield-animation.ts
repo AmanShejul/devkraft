@@ -2,6 +2,11 @@ export function getStarTwinkle(timestamp: number, speed: number, phase: number):
   return 0.38 + (Math.sin((timestamp / 1000) * speed + phase) + 1) * 0.31;
 }
 
+export function getStarFormationProgress(elapsedMs: number, delayMs: number, durationMs: number): number {
+  const progress = Math.min(1, Math.max(0, (elapsedMs - delayMs) / durationMs));
+  return progress * progress * (3 - 2 * progress);
+}
+
 type HeroBounds = {
   left: number;
   top: number;

@@ -2,13 +2,16 @@
 
 import { useEffect, useRef } from "react";
 import { createAnimationLoop } from "./animation-loop";
-import { getCursorPosition, getStarCursorOffset, getStarTwinkle } from "./starfield-animation";
+import { getCursorPosition, getStarCursorOffset, getStarFormationProgress, getStarTwinkle } from "./starfield-animation";
 
 type Star = {
   x: number;
   y: number;
   targetX: number;
   targetY: number;
+  formationDelay: number;
+  formationDuration: number;
+  spiralOffset: number;
   size: number;
   phase: number;
   speed: number;
@@ -65,7 +68,8 @@ type BurstParticle = {
 };
 
 const STAR_COUNT = 800;
-const INTRO_DURATION = 3_000;
+const INTRO_DURATION = 4_700;
+const FORMATION_FLASH_DURATION = 1_800;
 const BASE_ROTATION_DEGREES_PER_SECOND = 4;
 const METEOR_MIN_DELAY = 4_000;
 const METEOR_MAX_DELAY = 9_000;
@@ -113,11 +117,15 @@ function createStars(width: number, height: number): Star[] {
       angle += (Math.random() - 0.5) * (0.13 + radius / radiusLimit * 0.42);
     }
 
+    const normalizedRadius = radius / radiusLimit;
     return {
       x: Math.random() * width,
       y: Math.random() * height,
       targetX: centerX + Math.cos(angle) * radius * 1.45,
       targetY: centerY + Math.sin(angle) * radius * 0.78,
+      formationDelay: inCore ? Math.random() * 500 : 400 + normalizedRadius * 2_000,
+      formationDuration: 1_500 + Math.random() * 800,
+      spiralOffset: -(1.4 + Math.random() * 2.2),
       size: index < 8 ? 7 + Math.random() * 5 : 1 + Math.pow(Math.random(), 3.4) * 11,
       phase: Math.random() * Math.PI * 2,
       speed: 1 + Math.random() * 2,
@@ -181,6 +189,7 @@ export default function HeroSculptureCanvas() {
     let nebulae: Nebula[] = [];
     let backgroundGlow: CanvasGradient | null = null;
     let coreGlow: CanvasGradient | null = null;
+    let formationFlashGlow: CanvasGradient | null = null;
     let vignette: CanvasGradient | null = null;
     let cursorPosition: { x: number; y: number } | null = null;
     const depthOffsetX = [0, 0, 0];
@@ -286,8 +295,7 @@ export default function HeroSculptureCanvas() {
       context.fillRect(0, 0, width, height);
 
       const motionEnabled = !motionQuery.matches;
-      const intro = motionEnabled ? Math.min(1, Math.max(0, (timestamp - startTime) / INTRO_DURATION)) : 1;
-      const ease = intro * intro * (3 - 2 * intro);
+      const elapsed = timestamp - startTime;
       const centerX = width * 0.7;
       const centerY = Math.min(height * 0.5, Math.min(height, window.innerHeight) * 0.5);
 
@@ -338,8 +346,16 @@ export default function HeroSculptureCanvas() {
       }
 
       for (const star of stars) {
-        const baseX = star.x + (star.targetX - star.x) * ease;
-        const baseY = star.y + (star.targetY - star.y) * ease;
+        const formation = motionEnabled
+          ? getStarFormationProgress(elapsed, star.formationDelay, star.formationDuration)
+          : 1;
+        const remainingSpiral = star.spiralOffset * (1 - formation);
+        const targetOffsetX = star.targetX - centerX;
+        const targetOffsetY = star.targetY - centerY;
+        const arcTargetX = centerX + targetOffsetX * Math.cos(remainingSpiral) - targetOffsetY * Math.sin(remainingSpiral);
+        const arcTargetY = centerY + targetOffsetX * Math.sin(remainingSpiral) + targetOffsetY * Math.cos(remainingSpiral);
+        const baseX = star.x + (arcTargetX - star.x) * formation;
+        const baseY = star.y + (arcTargetY - star.y) * formation;
         if (cursorPosition && motionEnabled) {
           getStarCursorOffset(baseX, baseY, cursorPosition.x, cursorPosition.y, 190, 14 + star.size * 0.7, cursorOffset);
         } else {
@@ -351,7 +367,7 @@ export default function HeroSculptureCanvas() {
         const x = baseX + depthOffsetX[star.depthLayer] + star.cursorOffsetX;
         const y = baseY + depthOffsetY[star.depthLayer] + star.cursorOffsetY;
         const twinkle = motionEnabled ? getStarTwinkle(timestamp, star.speed, star.phase) : 1;
-        context.globalAlpha = star.opacity * twinkle;
+        context.globalAlpha = star.opacity * (0.15 + formation * 0.85) * twinkle;
         context.fillStyle = star.color;
         if (star.blur > 0) {
           context.shadowColor = star.color;
@@ -379,6 +395,14 @@ export default function HeroSculptureCanvas() {
       context.globalAlpha = 1;
 
       if (motionEnabled) {
+        if (formationFlashGlow && elapsed >= INTRO_DURATION && elapsed < INTRO_DURATION + FORMATION_FLASH_DURATION) {
+          const flashProgress = (elapsed - INTRO_DURATION) / FORMATION_FLASH_DURATION;
+          context.globalAlpha = Math.sin(flashProgress * Math.PI);
+          context.fillStyle = formationFlashGlow;
+          context.fillRect(0, 0, width, height);
+          context.globalAlpha = 1;
+        }
+
         if (timestamp >= nextMeteorAt) {
           nextMeteorAt = timestamp + (spawnMeteor(timestamp) ? randomMeteorDelay() : 500);
         }
@@ -494,6 +518,10 @@ export default function HeroSculptureCanvas() {
       coreGlow.addColorStop(0, "rgba(255, 220, 142, 0.9)");
       coreGlow.addColorStop(0.25, "rgba(231, 174, 72, 0.32)");
       coreGlow.addColorStop(1, "rgba(231, 174, 72, 0)");
+      formationFlashGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.24);
+      formationFlashGlow.addColorStop(0, "rgba(255, 240, 190, 0.9)");
+      formationFlashGlow.addColorStop(0.16, "rgba(255, 203, 104, 0.52)");
+      formationFlashGlow.addColorStop(1, "rgba(255, 180, 60, 0)");
       vignette = context.createLinearGradient(0, 0, 0, height);
       vignette.addColorStop(0, "rgba(0, 0, 0, 0.22)");
       vignette.addColorStop(0.16, "rgba(0, 0, 0, 0)");
