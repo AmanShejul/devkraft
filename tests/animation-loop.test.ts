@@ -70,4 +70,25 @@ describe("canvas animation loop", () => {
     expect(frames.pendingCount()).toBe(1);
     loop.stop();
   });
+
+  it("pauses without scheduling frames and can resume when motion is enabled", () => {
+    const frames = createFrameHarness();
+    const draws: number[] = [];
+    const loop = createAnimationLoop({
+      ...frames,
+      isHidden: () => false,
+      draw: (timestamp) => draws.push(timestamp),
+    });
+    loop.start();
+    loop.pause();
+
+    expect(frames.pendingCount()).toBe(0);
+
+    loop.wake();
+    expect(frames.pendingCount()).toBe(1);
+    frames.runNext(100);
+    expect(draws).toEqual([100]);
+
+    loop.stop();
+  });
 });

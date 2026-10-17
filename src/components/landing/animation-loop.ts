@@ -13,9 +13,10 @@ export function createAnimationLoop({
 }: AnimationLoopOptions) {
   let frameId: number | null = null;
   let stopped = false;
+  let paused = false;
 
   const schedule = () => {
-    if (!stopped && frameId === null) {
+    if (!stopped && !paused && frameId === null) {
       frameId = requestFrame(onFrame);
     }
   };
@@ -35,9 +36,15 @@ export function createAnimationLoop({
     start: schedule,
     wake: () => {
       if (stopped) return;
+      paused = false;
       if (frameId !== null) cancelFrame(frameId);
       frameId = null;
       schedule();
+    },
+    pause: () => {
+      paused = true;
+      if (frameId !== null) cancelFrame(frameId);
+      frameId = null;
     },
     stop: () => {
       stopped = true;

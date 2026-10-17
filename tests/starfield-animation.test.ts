@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCursorPosition, getStarCursorOffset, getStarFormationProgress, getStarTwinkle } from "@/components/landing/starfield-animation";
+import { getCursorPosition, getStarCursorOffset, getStarFormationProgress, getStarFormationTiming, getStarTwinkle } from "@/components/landing/starfield-animation";
 
 describe("starfield twinkle", () => {
   it("has visible brightness variation over time and stays within a safe range", () => {
@@ -12,19 +12,21 @@ describe("starfield twinkle", () => {
 
   describe("star formation", () => {
     it("holds dim stars before their staggered start, eases during travel, then locks at the target", () => {
-      expect(getStarFormationProgress(399, 400, 1_500)).toBe(0);
-      expect(getStarFormationProgress(1_150, 400, 1_500)).toBe(0.5);
-      expect(getStarFormationProgress(1_900, 400, 1_500)).toBe(1);
+      expect(getStarFormationProgress(1_999, 2_000, 1_000)).toBe(0);
+      expect(getStarFormationProgress(2_500, 2_000, 1_000)).toBe(0.5);
+      expect(getStarFormationProgress(3_000, 2_000, 1_000)).toBe(1);
       expect(getStarFormationProgress(0, 0, 1_500)).toBe(0);
     });
 
-    it("supports core-first and radius-scaled arm timing within the intro duration", () => {
-      const coreStart = 500;
-      const outerArmStart = 400 + 2_000;
-      const longestTravel = 1_500 + 800;
+    it("ignites the core before the arms and completes the outer spiral before the final beat", () => {
+      const core = getStarFormationTiming(0.1, true);
+      const innerArm = getStarFormationTiming(0.1, false);
+      const outerArm = getStarFormationTiming(1, false);
 
-      expect(coreStart + longestTravel).toBeLessThan(4_700);
-      expect(outerArmStart + longestTravel).toBe(4_700);
+      expect(core.delayMs).toBeGreaterThanOrEqual(2_000);
+      expect(core.delayMs + core.durationMs).toBeLessThan(3_500);
+      expect(innerArm.delayMs).toBeGreaterThanOrEqual(3_500);
+      expect(outerArm.delayMs + outerArm.durationMs).toBeLessThanOrEqual(7_000);
     });
   });
 

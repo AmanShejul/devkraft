@@ -7,6 +7,14 @@ export function getStarFormationProgress(elapsedMs: number, delayMs: number, dur
   return progress * progress * (3 - 2 * progress);
 }
 
+export function getStarFormationTiming(normalizedRadius: number, isCore: boolean): { delayMs: number; durationMs: number } {
+  if (isCore) {
+    return { delayMs: 2_000 + normalizedRadius * 300, durationMs: 1_000 };
+  }
+
+  return { delayMs: 3_500 + normalizedRadius * 1_900, durationMs: 700 };
+}
+
 type HeroBounds = {
   left: number;
   top: number;

@@ -2,13 +2,17 @@
 
 import { useEffect, useRef } from "react";
 import { createAnimationLoop } from "./animation-loop";
-import { getCursorPosition, getStarCursorOffset, getStarFormationProgress, getStarTwinkle } from "./starfield-animation";
+import { getCursorPosition, getStarCursorOffset, getStarFormationProgress, getStarFormationTiming, getStarTwinkle } from "./starfield-animation";
 
 type Star = {
   x: number;
   y: number;
+  currentX: number;
+  currentY: number;
   targetX: number;
   targetY: number;
+  normalizedRadius: number;
+  isCore: boolean;
   formationDelay: number;
   formationDuration: number;
   spiralOffset: number;
@@ -22,6 +26,23 @@ type Star = {
   depthLayer: 0 | 1 | 2;
   cursorOffsetX: number;
   cursorOffsetY: number;
+};
+
+type BackgroundStar = {
+  x: number;
+  y: number;
+  size: number;
+  opacity: number;
+  color: string;
+  phase: number;
+};
+
+type AccretionParticle = {
+  phase: number;
+  duration: number;
+  arm: number;
+  angularOffset: number;
+  size: number;
 };
 
 type Nebula = {
@@ -68,12 +89,17 @@ type BurstParticle = {
 };
 
 const STAR_COUNT = 800;
-const INTRO_DURATION = 4_700;
-const FORMATION_FLASH_DURATION = 1_800;
+const BACKGROUND_STAR_COUNT = 150;
+const ACCRETION_PARTICLE_COUNT = 120;
+const CORE_IGNITION_AT = 2_000;
+const ARMS_COMPLETE_AT = 7_000;
+const INTRO_DURATION = 8_000;
+const COMPLETION_FLASH_DURATION = 750;
+const SHOCKWAVE_DURATION = 1_200;
 const BASE_ROTATION_DEGREES_PER_SECOND = 4;
-const METEOR_MIN_DELAY = 4_000;
-const METEOR_MAX_DELAY = 9_000;
-const METEOR_DURATION = 1_200;
+const METEOR_MIN_DELAY = 7_000;
+const METEOR_MAX_DELAY = 12_000;
+const METEOR_DURATION = 1_800;
 const RIPPLE_DURATION = 800;
 const RIPPLE_COUNT = 4;
 const BURST_PARTICLES_PER_RIPPLE = 12;
@@ -118,13 +144,18 @@ function createStars(width: number, height: number): Star[] {
     }
 
     const normalizedRadius = radius / radiusLimit;
+    const formation = getStarFormationTiming(normalizedRadius, inCore);
     return {
       x: Math.random() * width,
       y: Math.random() * height,
+      currentX: 0,
+      currentY: 0,
       targetX: centerX + Math.cos(angle) * radius * 1.45,
       targetY: centerY + Math.sin(angle) * radius * 0.78,
-      formationDelay: inCore ? Math.random() * 500 : 400 + normalizedRadius * 2_000,
-      formationDuration: 1_500 + Math.random() * 800,
+      normalizedRadius,
+      isCore: inCore,
+      formationDelay: formation.delayMs + Math.random() * (inCore ? 100 : 200),
+      formationDuration: formation.durationMs + Math.random() * 150,
       spiralOffset: -(1.4 + Math.random() * 2.2),
       size: index < 8 ? 7 + Math.random() * 5 : 1 + Math.pow(Math.random(), 3.4) * 11,
       phase: Math.random() * Math.PI * 2,
@@ -143,10 +174,9 @@ function createStars(width: number, height: number): Star[] {
 function createNebulae(width: number, height: number): Nebula[] {
   const radius = Math.max(width, height) * 0.42;
   const definitions = [
-    { x: width * 0.58, y: height * 0.3, radius, phase: 0.4, speed: 0.18, driftX: width * 0.08, driftY: height * 0.05, innerColor: "rgba(37, 75, 170, 0.055)", outerColor: "rgba(37, 75, 170, 0)" },
-    { x: width * 0.78, y: height * 0.58, radius: radius * 0.82, phase: 2.1, speed: 0.13, driftX: width * 0.06, driftY: height * 0.08, innerColor: "rgba(101, 59, 176, 0.05)", outerColor: "rgba(101, 59, 176, 0)" },
-    { x: width * 0.48, y: height * 0.72, radius: radius * 0.7, phase: 4.2, speed: 0.16, driftX: width * 0.09, driftY: height * 0.04, innerColor: "rgba(213, 153, 57, 0.045)", outerColor: "rgba(213, 153, 57, 0)" },
-    { x: width * 0.9, y: height * 0.2, radius: radius * 0.62, phase: 5.5, speed: 0.11, driftX: width * 0.05, driftY: height * 0.07, innerColor: "rgba(54, 107, 189, 0.05)", outerColor: "rgba(54, 107, 189, 0)" },
+    { x: width * 0.36, y: height * 0.34, radius, phase: 0.4, speed: 0.028, driftX: width * 0.055, driftY: height * 0.04, innerColor: "rgba(139, 92, 246, 0.055)", outerColor: "rgba(139, 92, 246, 0)" },
+    { x: width * 0.76, y: height * 0.58, radius: radius * 0.86, phase: 2.1, speed: 0.022, driftX: width * 0.045, driftY: height * 0.055, innerColor: "rgba(45, 212, 191, 0.05)", outerColor: "rgba(45, 212, 191, 0)" },
+    { x: width * 0.52, y: height * 0.82, radius: radius * 0.78, phase: 4.2, speed: 0.025, driftX: width * 0.06, driftY: height * 0.035, innerColor: "rgba(244, 114, 182, 0.045)", outerColor: "rgba(244, 114, 182, 0)" },
   ];
   return definitions.map((definition) => {
     const texture = document.createElement("canvas");
@@ -165,12 +195,38 @@ function createNebulae(width: number, height: number): Nebula[] {
   });
 }
 
+function createBackgroundStars(width: number, height: number): BackgroundStar[] {
+  return Array.from({ length: BACKGROUND_STAR_COUNT }, () => ({
+    x: Math.random() * width,
+    y: Math.random() * height,
+    size: 0.45 + Math.random() * 0.9,
+    opacity: 0.3 + Math.random() * 0.2,
+    color: Math.random() > 0.72 ? "#b8d4f0" : "#f5f2ea",
+    phase: Math.random() * TAU,
+  }));
+}
+
+function createAccretionParticles(): AccretionParticle[] {
+  return Array.from({ length: ACCRETION_PARTICLE_COUNT }, (_, index) => ({
+    phase: Math.random(),
+    duration: 4_500 + Math.random() * 2_500,
+    arm: index % 2 === 0 ? 0 : Math.PI,
+    angularOffset: (Math.random() - 0.5) * 0.3,
+    size: 0.7 + Math.random() * 1.4,
+  }));
+}
+
 function randomMeteorDelay(): number {
   return METEOR_MIN_DELAY + Math.random() * (METEOR_MAX_DELAY - METEOR_MIN_DELAY);
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function smoothstep(value: number): number {
+  const progress = clamp(value, 0, 1);
+  return progress * progress * (3 - 2 * progress);
 }
 
 export default function HeroSculptureCanvas() {
@@ -182,15 +238,51 @@ export default function HeroSculptureCanvas() {
     if (!canvas || !context) return;
 
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const grainCanvas = document.createElement("canvas");
+    grainCanvas.width = 128;
+    grainCanvas.height = 128;
+    const grainContext = grainCanvas.getContext("2d");
+    if (!grainContext) return;
+    const grainImage = grainContext.createImageData(grainCanvas.width, grainCanvas.height);
+    for (let index = 0; index < grainImage.data.length; index += 4) {
+      const shade = 96 + Math.floor(Math.random() * 160);
+      grainImage.data[index] = shade;
+      grainImage.data[index + 1] = shade;
+      grainImage.data[index + 2] = shade;
+      grainImage.data[index + 3] = 255;
+    }
+    grainContext.putImageData(grainImage, 0, 0);
+    const grainPattern = context.createPattern(grainCanvas, "repeat");
+    const grainTransform = new DOMMatrix();
+    const cometCanvas = document.createElement("canvas");
+    cometCanvas.width = 256;
+    cometCanvas.height = 12;
+    const cometContext = cometCanvas.getContext("2d");
+    const cometGradient = cometContext?.createLinearGradient(0, 0, cometCanvas.width, 0);
+    if (cometContext && cometGradient) {
+      cometGradient.addColorStop(0, "rgba(255, 205, 116, 0)");
+      cometGradient.addColorStop(0.55, "rgba(255, 205, 116, 0.16)");
+      cometGradient.addColorStop(0.88, "rgba(255, 227, 170, 0.58)");
+      cometGradient.addColorStop(1, "rgba(255, 250, 232, 0.92)");
+      cometContext.fillStyle = cometGradient;
+      cometContext.fillRect(0, 0, cometCanvas.width, cometCanvas.height);
+    }
+
     let width = 0;
     let height = 0;
+    let radiusLimit = 0;
     let pixelRatio = 1;
     let stars: Star[] = [];
+    let backgroundStars: BackgroundStar[] = [];
+    let accretionParticles: AccretionParticle[] = [];
     let nebulae: Nebula[] = [];
     let backgroundGlow: CanvasGradient | null = null;
+    let coolCoreGlow: CanvasGradient | null = null;
     let coreGlow: CanvasGradient | null = null;
+    let ignitionGlow: CanvasGradient | null = null;
     let formationFlashGlow: CanvasGradient | null = null;
     let vignette: CanvasGradient | null = null;
+    let coreTexture: HTMLCanvasElement | null = null;
     let cursorPosition: { x: number; y: number } | null = null;
     const depthOffsetX = [0, 0, 0];
     const depthOffsetY = [0, 0, 0];
@@ -223,11 +315,15 @@ export default function HeroSculptureCanvas() {
       startTime: 0,
     }));
     const startTime = performance.now();
-    let nextMeteorAt = startTime + randomMeteorDelay();
+    let nextMeteorAt = startTime + INTRO_DURATION + randomMeteorDelay();
     let meteorCursor = 0;
     let rippleCursor = 0;
+    let flareStarIndex = -1;
+    let flareStartedAt = 0;
+    let nextFlareAt = startTime + INTRO_DURATION + 2_000 + Math.random() * 2_000;
     let rotation = 0;
     let lastRotationTimestamp = startTime;
+    let lastGrainFrame = -1;
     let scrollProgress = 0;
     let scrollFrameId: number | null = null;
 
@@ -238,6 +334,7 @@ export default function HeroSculptureCanvas() {
     };
 
     const spawnMeteor = (timestamp: number): boolean => {
+      if (meteors.some((meteor) => meteor.active)) return false;
       let meteor: Meteor | undefined;
       for (let index = 0; index < meteors.length; index += 1) {
         const candidate = meteors[(meteorCursor + index) % meteors.length];
@@ -258,7 +355,7 @@ export default function HeroSculptureCanvas() {
       meteor.startY = Math.random() * height * 0.35 - height * 0.18;
       meteor.directionX = directionX;
       meteor.directionY = directionY;
-      meteor.tailLength = 90 + Math.random() * 55;
+      meteor.tailLength = 190 + Math.random() * 110;
       return true;
     };
 
@@ -295,15 +392,17 @@ export default function HeroSculptureCanvas() {
       context.fillRect(0, 0, width, height);
 
       const motionEnabled = !motionQuery.matches;
-      const elapsed = timestamp - startTime;
+      const elapsed = Math.max(0, timestamp - startTime);
       const centerX = width * 0.7;
       const centerY = Math.min(height * 0.5, Math.min(height, window.innerHeight) * 0.5);
+      const scrollEase = smoothstep(scrollProgress);
+      const pointerX = cursorPosition ? (cursorPosition.x - centerX) / Math.max(1, width) : 0;
+      const pointerY = cursorPosition ? (cursorPosition.y - centerY) / Math.max(1, height) : 0;
 
       if (motionEnabled) {
         const delta = clamp(timestamp - lastRotationTimestamp, 0, 100);
         lastRotationTimestamp = timestamp;
-        if (timestamp - startTime >= INTRO_DURATION) {
-          const scrollEase = scrollProgress * scrollProgress * (3 - 2 * scrollProgress);
+        if (elapsed >= INTRO_DURATION) {
           const speedMultiplier = 1 + scrollEase * 2;
           rotation -= (delta / 1000) * (Math.PI / 180) * BASE_ROTATION_DEGREES_PER_SECOND * speedMultiplier;
         }
@@ -311,24 +410,64 @@ export default function HeroSculptureCanvas() {
         lastRotationTimestamp = timestamp;
       }
 
+      const backgroundParallaxX = motionEnabled ? pointerX * width * 0.018 : 0;
+      const backgroundParallaxY = motionEnabled ? pointerY * height * 0.018 : 0;
+      const backgroundTime = elapsed / 1000;
+      for (const star of backgroundStars) {
+        const drift = motionEnabled ? Math.sin(backgroundTime * 0.08 + star.phase) * 1.5 : 0;
+        const twinkle = motionEnabled ? 0.82 + Math.sin(backgroundTime * 0.35 + star.phase) * 0.18 : 1;
+        context.globalAlpha = star.opacity * twinkle;
+        context.fillStyle = star.color;
+        context.fillRect(star.x + backgroundParallaxX + drift, star.y + backgroundParallaxY, star.size, star.size);
+      }
+      context.globalAlpha = 1;
+
       if (motionEnabled) {
-        const nebulaTime = (timestamp - startTime) / 1000;
         for (const nebula of nebulae) {
-          const nebulaX = nebula.x + Math.sin(nebulaTime * nebula.speed + nebula.phase) * nebula.driftX;
-          const nebulaY = nebula.y + Math.cos(nebulaTime * nebula.speed * 0.83 + nebula.phase) * nebula.driftY;
+          const nebulaX = nebula.x + Math.sin(backgroundTime * nebula.speed + nebula.phase) * nebula.driftX;
+          const nebulaY = nebula.y + Math.cos(backgroundTime * nebula.speed * 0.83 + nebula.phase) * nebula.driftY;
           context.drawImage(nebula.texture, nebulaX - nebula.radius, nebulaY - nebula.radius);
         }
-
-        const pulse = 0.5 + Math.sin((timestamp - startTime) / 1000 * (TAU / 6)) * 0.5;
-        if (coreGlow) {
-          context.globalAlpha = 0.2 + pulse * 0.22;
-          context.fillStyle = coreGlow;
-          context.fillRect(0, 0, width, height);
-          context.globalAlpha = 1;
+      } else {
+        for (const nebula of nebulae) {
+          context.drawImage(nebula.texture, nebula.x - nebula.radius, nebula.y - nebula.radius);
         }
       }
 
-      const scrollEase = scrollProgress * scrollProgress * (3 - 2 * scrollProgress);
+      const corePulse = motionEnabled ? 0.5 + Math.sin(backgroundTime * (TAU / 8)) * 0.5 : 0.5;
+      const coreVisibility = motionEnabled ? smoothstep((elapsed - CORE_IGNITION_AT) / 700) : 1;
+      if (coolCoreGlow && coreGlow && coreVisibility > 0) {
+        context.globalAlpha = coreVisibility * (0.12 + corePulse * 0.1);
+        context.fillStyle = coolCoreGlow;
+        context.fillRect(0, 0, width, height);
+        context.globalAlpha = coreVisibility * (0.13 + corePulse * 0.12);
+        context.fillStyle = coreGlow;
+        context.fillRect(0, 0, width, height);
+        context.globalAlpha = 1;
+      }
+
+      if (coreTexture && coreVisibility > 0) {
+        const coreSize = Math.max(110, Math.min(width, height) * 0.62);
+        const coreAngle = motionEnabled ? Math.max(0, elapsed - INTRO_DURATION) * 0.000035 : 0;
+        context.save();
+        context.globalCompositeOperation = "lighter";
+        context.globalAlpha = coreVisibility * (0.18 + corePulse * 0.08);
+        context.translate(centerX, centerY);
+        context.rotate(coreAngle);
+        context.drawImage(coreTexture, -coreSize / 2, -coreSize / 2, coreSize, coreSize);
+        context.restore();
+        context.globalAlpha = 1;
+        context.globalCompositeOperation = "source-over";
+      }
+
+      if (motionEnabled && ignitionGlow && elapsed >= CORE_IGNITION_AT && elapsed < CORE_IGNITION_AT + 900) {
+        const ignitionProgress = (elapsed - CORE_IGNITION_AT) / 900;
+        context.globalAlpha = Math.sin(ignitionProgress * Math.PI) * 0.32;
+        context.fillStyle = ignitionGlow;
+        context.fillRect(0, 0, width, height);
+        context.globalAlpha = 1;
+      }
+
       const spiralScale = motionEnabled ? 1 + scrollEase * 0.15 : 1;
       context.save();
       context.translate(centerX, centerY);
@@ -336,8 +475,6 @@ export default function HeroSculptureCanvas() {
       context.scale(spiralScale, spiralScale);
       context.translate(-centerX, -centerY);
 
-      const pointerX = cursorPosition ? (cursorPosition.x - centerX) / Math.max(1, width) : 0;
-      const pointerY = cursorPosition ? (cursorPosition.y - centerY) / Math.max(1, height) : 0;
       for (let layer = 0; layer < 3; layer += 1) {
         const targetX = motionEnabled ? pointerX * width * 0.12 * DEPTH_PARALLAX_STRENGTH[layer] : 0;
         const targetY = motionEnabled ? pointerY * height * 0.12 * DEPTH_PARALLAX_STRENGTH[layer] : 0;
@@ -345,7 +482,11 @@ export default function HeroSculptureCanvas() {
         depthOffsetY[layer] += (targetY - depthOffsetY[layer]) * 0.08;
       }
 
-      for (const star of stars) {
+      const completionBoost = motionEnabled && elapsed >= ARMS_COMPLETE_AT && elapsed < INTRO_DURATION
+        ? 1 + (1 - (elapsed - ARMS_COMPLETE_AT) / (INTRO_DURATION - ARMS_COMPLETE_AT)) * 0.2
+        : 1;
+      for (let index = 0; index < stars.length; index += 1) {
+        const star = stars[index];
         const formation = motionEnabled
           ? getStarFormationProgress(elapsed, star.formationDelay, star.formationDuration)
           : 1;
@@ -354,8 +495,11 @@ export default function HeroSculptureCanvas() {
         const targetOffsetY = star.targetY - centerY;
         const arcTargetX = centerX + targetOffsetX * Math.cos(remainingSpiral) - targetOffsetY * Math.sin(remainingSpiral);
         const arcTargetY = centerY + targetOffsetX * Math.sin(remainingSpiral) + targetOffsetY * Math.cos(remainingSpiral);
-        const baseX = star.x + (arcTargetX - star.x) * formation;
-        const baseY = star.y + (arcTargetY - star.y) * formation;
+        const driftAmount = (1 - formation) * 4;
+        const scatteredX = star.x + (motionEnabled ? Math.sin(backgroundTime * 0.32 + star.phase) * driftAmount : 0);
+        const scatteredY = star.y + (motionEnabled ? Math.cos(backgroundTime * 0.29 + star.phase) * driftAmount : 0);
+        const baseX = scatteredX + (arcTargetX - scatteredX) * formation;
+        const baseY = scatteredY + (arcTargetY - scatteredY) * formation;
         if (cursorPosition && motionEnabled) {
           getStarCursorOffset(baseX, baseY, cursorPosition.x, cursorPosition.y, 190, 14 + star.size * 0.7, cursorOffset);
         } else {
@@ -366,8 +510,10 @@ export default function HeroSculptureCanvas() {
         star.cursorOffsetY += (cursorOffset.y - star.cursorOffsetY) * 0.16;
         const x = baseX + depthOffsetX[star.depthLayer] + star.cursorOffsetX;
         const y = baseY + depthOffsetY[star.depthLayer] + star.cursorOffsetY;
+        star.currentX = x;
+        star.currentY = y;
         const twinkle = motionEnabled ? getStarTwinkle(timestamp, star.speed, star.phase) : 1;
-        context.globalAlpha = star.opacity * (0.15 + formation * 0.85) * twinkle;
+        context.globalAlpha = star.opacity * (0.1 + formation * 0.9) * twinkle * completionBoost;
         context.fillStyle = star.color;
         if (star.blur > 0) {
           context.shadowColor = star.color;
@@ -390,21 +536,112 @@ export default function HeroSculptureCanvas() {
           context.lineWidth = Math.max(0.5, star.size * 0.12);
           context.stroke();
         }
+
+        const lockAge = elapsed - star.formationDelay - star.formationDuration;
+        if (motionEnabled && lockAge >= 0 && lockAge < 420) {
+          const travelX = arcTargetX - star.x;
+          const travelY = arcTargetY - star.y;
+          const travelLength = Math.max(1, Math.hypot(travelX, travelY));
+          const trailLength = 3 + star.size * 1.5;
+          context.globalAlpha = (1 - lockAge / 420) * 0.55;
+          context.strokeStyle = star.color;
+          context.lineWidth = Math.max(0.6, star.size * 0.12);
+          context.beginPath();
+          context.moveTo(x - (travelX / travelLength) * trailLength, y - (travelY / travelLength) * trailLength);
+          context.lineTo(x, y);
+          context.stroke();
+          context.globalAlpha = (1 - lockAge / 420) * 0.75;
+          context.beginPath();
+          context.arc(x, y, Math.max(1, star.size * 0.42), 0, TAU);
+          context.fill();
+        }
       }
+
+      if (motionEnabled && elapsed >= nextFlareAt && stars.length > 0) {
+        flareStarIndex = Math.floor(Math.random() * stars.length);
+        flareStartedAt = timestamp;
+        nextFlareAt = timestamp + 2_000 + Math.random() * 2_000;
+      }
+      if (motionEnabled && flareStarIndex >= 0) {
+        const flareProgress = (timestamp - flareStartedAt) / 600;
+        if (flareProgress >= 1) {
+          flareStarIndex = -1;
+        } else if (flareProgress >= 0) {
+          const flare = stars[flareStarIndex];
+          const flareStrength = Math.sin(flareProgress * Math.PI);
+          context.globalAlpha = flareStrength * flare.opacity * 1.5;
+          context.fillStyle = "#fff1c8";
+          context.shadowColor = "#ffd27a";
+          context.shadowBlur = 12;
+          context.beginPath();
+          context.arc(flare.currentX, flare.currentY, flare.size * 1.25, 0, TAU);
+          context.fill();
+          context.globalAlpha *= 0.72;
+          context.beginPath();
+          context.moveTo(flare.currentX - flare.size * 3, flare.currentY);
+          context.lineTo(flare.currentX + flare.size * 3, flare.currentY);
+          context.moveTo(flare.currentX, flare.currentY - flare.size * 3);
+          context.lineTo(flare.currentX, flare.currentY + flare.size * 3);
+          context.strokeStyle = "#fff1c8";
+          context.lineWidth = Math.max(0.7, flare.size * 0.16);
+          context.stroke();
+          context.shadowBlur = 0;
+        }
+      }
+
+      if (motionEnabled && elapsed >= INTRO_DURATION && accretionParticles.length > 0) {
+        context.globalCompositeOperation = "lighter";
+        context.shadowColor = "#e8b96a";
+        context.shadowBlur = 5;
+        for (const particle of accretionParticles) {
+          const progress = ((elapsed - INTRO_DURATION) / particle.duration + particle.phase) % 1;
+          const radiusProgress = 0.05 + (1 - progress) * 0.9;
+          const particleRadius = radiusLimit * radiusProgress;
+          const angle = particle.arm + Math.log(Math.max(radiusProgress, 0.025)) * 1.65 + particle.angularOffset;
+          const particleX = centerX + Math.cos(angle) * particleRadius * 1.45;
+          const particleY = centerY + Math.sin(angle) * particleRadius * 0.78;
+          const fadeAtCore = smoothstep((radiusProgress - 0.06) / 0.2);
+          const fadeAtLoop = 1 - smoothstep((progress - 0.9) / 0.1);
+          context.globalAlpha = fadeAtCore * fadeAtLoop * 0.62;
+          context.fillStyle = "#f6d28f";
+          context.beginPath();
+          context.arc(particleX, particleY, particle.size, 0, TAU);
+          context.fill();
+        }
+        context.shadowBlur = 0;
+        context.globalAlpha = 1;
+        context.globalCompositeOperation = "source-over";
+      }
+
       context.restore();
       context.globalAlpha = 1;
 
       if (motionEnabled) {
-        if (formationFlashGlow && elapsed >= INTRO_DURATION && elapsed < INTRO_DURATION + FORMATION_FLASH_DURATION) {
-          const flashProgress = (elapsed - INTRO_DURATION) / FORMATION_FLASH_DURATION;
-          context.globalAlpha = Math.sin(flashProgress * Math.PI);
+        if (formationFlashGlow && elapsed >= ARMS_COMPLETE_AT && elapsed < ARMS_COMPLETE_AT + COMPLETION_FLASH_DURATION) {
+          const flashProgress = (elapsed - ARMS_COMPLETE_AT) / COMPLETION_FLASH_DURATION;
+          context.globalAlpha = Math.sin(flashProgress * Math.PI) * 0.62;
           context.fillStyle = formationFlashGlow;
           context.fillRect(0, 0, width, height);
           context.globalAlpha = 1;
         }
 
+        const shockwaveProgress = (elapsed - ARMS_COMPLETE_AT) / SHOCKWAVE_DURATION;
+        if (shockwaveProgress >= 0 && shockwaveProgress < 1) {
+          context.save();
+          context.globalCompositeOperation = "lighter";
+          context.globalAlpha = (1 - shockwaveProgress) * 0.72;
+          context.strokeStyle = "rgba(255, 221, 155, 0.9)";
+          context.shadowColor = "#f3bd68";
+          context.shadowBlur = 13;
+          context.lineWidth = 2 - shockwaveProgress;
+          context.beginPath();
+          context.arc(centerX, centerY, 12 + shockwaveProgress * Math.max(width, height) * 0.58, 0, TAU);
+          context.stroke();
+          context.restore();
+        }
+
         if (timestamp >= nextMeteorAt) {
-          nextMeteorAt = timestamp + (spawnMeteor(timestamp) ? randomMeteorDelay() : 500);
+          nextMeteorAt = timestamp + (spawnMeteor(timestamp) ? randomMeteorDelay() : 1_000);
         }
         for (const meteor of meteors) {
           if (!meteor.active) continue;
@@ -419,19 +656,20 @@ export default function HeroSculptureCanvas() {
           const directionLength = Math.hypot(meteor.directionX, meteor.directionY);
           const tailX = headX - (meteor.directionX / directionLength) * meteor.tailLength;
           const tailY = headY - (meteor.directionY / directionLength) * meteor.tailLength;
-          const meteorGradient = context.createLinearGradient(tailX, tailY, headX, headY);
-          meteorGradient.addColorStop(0, "rgba(255, 214, 126, 0)");
-          meteorGradient.addColorStop(0.7, "rgba(255, 214, 126, 0.3)");
-          meteorGradient.addColorStop(1, "rgba(255, 246, 211, 0.95)");
           context.save();
-          context.globalAlpha = 1 - progress * 0.35;
-          context.strokeStyle = meteorGradient;
-          context.lineWidth = 2;
-          context.lineCap = "round";
+          context.globalCompositeOperation = "lighter";
+          context.globalAlpha = (1 - progress * 0.35) * 0.9;
+          context.translate(tailX, tailY);
+          context.rotate(Math.atan2(meteor.directionY, meteor.directionX));
+          if (cometCanvas.width > 0) {
+            context.drawImage(cometCanvas, 0, -8, meteor.tailLength, 16);
+          }
+          context.shadowColor = "#ffe6b3";
+          context.shadowBlur = 16;
+          context.fillStyle = "#fff8e8";
           context.beginPath();
-          context.moveTo(tailX, tailY);
-          context.lineTo(headX, headY);
-          context.stroke();
+          context.arc(meteor.tailLength, 0, 2.4, 0, TAU);
+          context.fill();
           context.restore();
         }
 
@@ -472,6 +710,23 @@ export default function HeroSculptureCanvas() {
 
       context.fillStyle = vignette;
       context.fillRect(0, 0, width, height);
+      if (grainPattern) {
+        if (motionEnabled) {
+          const grainFrame = Math.floor(timestamp / 120);
+          if (grainFrame !== lastGrainFrame) {
+            lastGrainFrame = grainFrame;
+            grainTransform.e = (grainFrame % 8) * 16;
+            grainTransform.f = (grainFrame % 5) * 16;
+            grainPattern.setTransform(grainTransform);
+          }
+        }
+        context.globalAlpha = 0.02;
+        context.globalCompositeOperation = "soft-light";
+        context.fillStyle = grainPattern;
+        context.fillRect(0, 0, width, height);
+        context.globalAlpha = 1;
+        context.globalCompositeOperation = "source-over";
+      }
     };
 
     const updateScrollResponse = () => {
@@ -505,29 +760,68 @@ export default function HeroSculptureCanvas() {
 
       width = bounds.width;
       height = bounds.height;
+      radiusLimit = Math.min(Math.min(height, window.innerHeight) * 0.58, width * 0.38);
       pixelRatio = nextPixelRatio;
       canvas.width = nextWidth;
       canvas.height = nextHeight;
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-      backgroundGlow = context.createRadialGradient(width * 0.5, height * 0.5, 0, width * 0.5, height * 0.5, Math.max(width, height) * 0.65);
-      backgroundGlow.addColorStop(0, "rgba(18, 30, 55, 0)");
-      backgroundGlow.addColorStop(0.72, "rgba(18, 30, 55, 0.025)");
-      backgroundGlow.addColorStop(1, "rgba(35, 60, 100, 0.08)");
+      backgroundGlow = context.createLinearGradient(0, 0, 0, height);
+      backgroundGlow.addColorStop(0, "#0a0e1f");
+      backgroundGlow.addColorStop(0.56, "#070a16");
+      backgroundGlow.addColorStop(1, "#03040a");
       const coreCenterY = Math.min(height * 0.5, Math.min(height, window.innerHeight) * 0.5);
-      coreGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.2);
-      coreGlow.addColorStop(0, "rgba(255, 220, 142, 0.9)");
-      coreGlow.addColorStop(0.25, "rgba(231, 174, 72, 0.32)");
+      coolCoreGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.38);
+      coolCoreGlow.addColorStop(0, "rgba(132, 164, 255, 0.14)");
+      coolCoreGlow.addColorStop(0.36, "rgba(97, 120, 219, 0.08)");
+      coolCoreGlow.addColorStop(1, "rgba(97, 120, 219, 0)");
+      coreGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.18);
+      coreGlow.addColorStop(0, "rgba(255, 231, 171, 0.8)");
+      coreGlow.addColorStop(0.2, "rgba(231, 174, 72, 0.28)");
       coreGlow.addColorStop(1, "rgba(231, 174, 72, 0)");
+      ignitionGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.3);
+      ignitionGlow.addColorStop(0, "rgba(255, 248, 221, 0.95)");
+      ignitionGlow.addColorStop(0.12, "rgba(255, 211, 123, 0.7)");
+      ignitionGlow.addColorStop(1, "rgba(255, 180, 60, 0)");
       formationFlashGlow = context.createRadialGradient(width * 0.7, coreCenterY, 0, width * 0.7, coreCenterY, Math.max(width, height) * 0.24);
       formationFlashGlow.addColorStop(0, "rgba(255, 240, 190, 0.9)");
       formationFlashGlow.addColorStop(0.16, "rgba(255, 203, 104, 0.52)");
       formationFlashGlow.addColorStop(1, "rgba(255, 180, 60, 0)");
+      coreTexture = document.createElement("canvas");
+      coreTexture.width = 256;
+      coreTexture.height = 256;
+      const coreTextureContext = coreTexture.getContext("2d");
+      if (coreTextureContext) {
+        const coreTextureGlow = coreTextureContext.createRadialGradient(128, 128, 0, 128, 128, 128);
+        coreTextureGlow.addColorStop(0, "rgba(255, 244, 205, 0.8)");
+        coreTextureGlow.addColorStop(0.12, "rgba(255, 206, 118, 0.3)");
+        coreTextureGlow.addColorStop(0.52, "rgba(98, 132, 232, 0.08)");
+        coreTextureGlow.addColorStop(1, "rgba(98, 132, 232, 0)");
+        coreTextureContext.fillStyle = coreTextureGlow;
+        coreTextureContext.fillRect(0, 0, 256, 256);
+        coreTextureContext.lineWidth = 1;
+        for (let arm = 0; arm < 2; arm += 1) {
+          coreTextureContext.beginPath();
+          for (let step = 0; step <= 48; step += 1) {
+            const progress = step / 48;
+            const radius = progress * 104;
+            const angle = arm * Math.PI + Math.log(Math.max(progress, 0.02)) * 1.65;
+            const x = 128 + Math.cos(angle) * radius;
+            const y = 128 + Math.sin(angle) * radius * 0.78;
+            if (step === 0) coreTextureContext.moveTo(x, y);
+            else coreTextureContext.lineTo(x, y);
+          }
+          coreTextureContext.strokeStyle = arm === 0 ? "rgba(255, 220, 151, 0.12)" : "rgba(144, 174, 255, 0.1)";
+          coreTextureContext.stroke();
+        }
+      }
       vignette = context.createLinearGradient(0, 0, 0, height);
       vignette.addColorStop(0, "rgba(0, 0, 0, 0.22)");
       vignette.addColorStop(0.16, "rgba(0, 0, 0, 0)");
       vignette.addColorStop(0.84, "rgba(0, 0, 0, 0)");
       vignette.addColorStop(1, "rgba(0, 0, 0, 0.24)");
       stars = createStars(width, height);
+      backgroundStars = createBackgroundStars(width, height);
+      accretionParticles = createAccretionParticles();
       nebulae = createNebulae(width, height);
       resizePending = false;
       draw(document.hidden ? startTime + INTRO_DURATION : performance.now());
@@ -547,11 +841,13 @@ export default function HeroSculptureCanvas() {
         scrollProgress = 0;
         clearInteractiveEffects();
       } else {
-        nextMeteorAt = performance.now() + randomMeteorDelay();
+        nextMeteorAt = Math.max(performance.now(), startTime + INTRO_DURATION) + randomMeteorDelay();
+        nextFlareAt = Math.max(performance.now(), startTime + INTRO_DURATION) + 2_000 + Math.random() * 2_000;
       }
       lastRotationTimestamp = performance.now();
       if (!document.hidden) draw(performance.now());
-      animationLoop.wake();
+      if (motionQuery.matches) animationLoop.pause();
+      else animationLoop.wake();
     };
     const onVisibilityChange = () => {
       if (document.hidden) return;
@@ -589,7 +885,7 @@ export default function HeroSculptureCanvas() {
     window.addEventListener("pointerleave", onPointerLeave);
     document.addEventListener("visibilitychange", onVisibilityChange);
     motionQuery.addEventListener("change", onMotionChange);
-    animationLoop.start();
+    if (!motionQuery.matches) animationLoop.start();
 
     return () => {
       animationLoop.stop();
