@@ -5,16 +5,17 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { OnMount } from "@monaco-editor/react";
 import type { IDisposable } from "monaco-editor";
-import { Check, Play, Settings2 } from "lucide-react";
+import { Check, Play, Send, Settings2 } from "lucide-react";
 import type { ApiResponse } from "@/types/api";
-import { isCodeExecutionResult, type CodeExecutionRequest, type CodeExecutionResult, type SessionEvent, type VivaEvaluation, type VivaQuestion } from "@/types/domain";
-import type { CountDownTestResult } from "@/features/code-execution/count-down-tests";
+import { isCodeExecutionResult, type CodeExecutionRequest, type CodeExecutionResult, type ConceptMastery, type SessionEvent, type VivaEvaluation, type VivaQuestion } from "@/types/domain";
+import { buildCountDownHarness, parseCountDownTestOutput, type CountDownTestResult } from "@/features/code-execution/count-down-tests";
+import { updateMissionMasteryFromSubmission } from "@/features/code-execution/mastery";
 import { prepareVivaForSubmit } from "@/features/viva/viva";
 import { SessionReplay } from "@/components/coding/session-replay";
 import { MagneticButton } from "@/components/ui/magnetic-button";
 import { AnimatedNumber } from "@/components/ui/text-animation";
 import { isStoredArenaSession, readStoredArenaSessions, SESSION_HISTORY_STORAGE_KEY, SESSION_STORAGE_KEY } from "@/features/integrity/session-storage";
-import { PyodideRunnerError, runPythonInBrowser } from "@/features/code-execution/pyodide-runner";
+import { getStatus as getPyodideStatus, runPython } from "@/lib/pyodide/pyodide-client";
 
 const Monaco = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -116,7 +117,7 @@ export function CodeEditor() {
   const [errorCode, setErrorCode] = useState<string>();
   const [execution, setExecution] = useState<CodeExecutionResult | null>(null);
   const [submission, setSubmission] = useState<CodeSubmissionResponse | null>(null);
-  const [providerReady, setProviderReady] = useState(false);
+  const [pythonLoading, setPythonLoading] = useState(false);
   const [vivaQuestions, setVivaQuestions] = useState<VivaQuestion[]>([]);
   const [vivaAnswers, setVivaAnswers] = useState<Record<string, string>>({});
   const [vivaEvaluations, setVivaEvaluations] = useState<VivaEvaluation[]>([]);
@@ -127,6 +128,7 @@ export function CodeEditor() {
   const [timelineLoaded, setTimelineLoaded] = useState(false);
   const [timelineError, setTimelineError] = useState("");
   const pastePending = useRef(false);
+  const localPythonMastery = useRef<ConceptMastery[]>([]);
   const editorSubscription = useRef<IDisposable | null>(null);
   const recordEventRef = useRef<(kind: SessionEvent["kind"], payload?: SessionEvent["payload"]) => void>(() => {});
 
@@ -229,7 +231,6 @@ export function CodeEditor() {
     setVivaUnderstandingScore(null);
     setVivaMessage("");
     setErrorCode(undefined);
-    setProviderReady(false);
     setMessage(nextLanguage === "python" ? "Python runs locally in your browser with Pyodide." : "Ready to run. Choose Run to execute your code.");
   }
 
@@ -263,22 +264,42 @@ export function CodeEditor() {
     setExecution(null);
     setSubmission(null);
     setErrorCode(undefined);
-    if (action === "run" && language === "python") {
-      setMessage("Starting the local Python runtimeâ€¦");
+    if (language === "python") {
+      const firstRun = getPyodideStatus() !== "ready";
+      setPythonLoading(firstRun);
+      setMessage(firstRun ? "Loading Python runtime…" : action === "submit" ? "Running hidden tests locally…" : "Running Python locally…");
       try {
-        const result = await runPythonInBrowser(submittedSource, stdin);
-        setExecution(result);
-        setProviderReady(true);
-        setMessage(describeResult(result));
-      } catch (error) {
-        if (error instanceof PyodideRunnerError) {
-          setErrorCode(error.kind === "timeout" ? "PYODIDE_TIMEOUT" : "PYODIDE_UNAVAILABLE");
-          setMessage(error.message);
+        const pythonSource = action === "submit"
+          ? `${submittedSource}\n${buildCountDownHarness("python")}`
+          : submittedSource;
+        const result = await runPython(pythonSource);
+        if ("error" in result) {
+          const isTimeout = result.error.toLowerCase().includes("12-second");
+          setErrorCode(isTimeout ? "PYODIDE_TIMEOUT" : "PYODIDE_UNAVAILABLE");
+          setMessage(result.error);
+          return;
+        }
+
+        if (action === "submit") {
+          const hiddenTests = parseCountDownTestOutput(result.output);
+          if (!hiddenTests) {
+            setErrorCode("INVALID_PYTHON_OUTPUT");
+            setMessage("The Python runtime finished, but the hidden-test output was not valid. Check that count_down returns a list and try again.");
+            return;
+          }
+          const mastery = updateMissionMasteryFromSubmission(localPythonMastery.current, hiddenTests.passed / hiddenTests.total >= 0.6);
+          localPythonMastery.current = mastery;
+          setSubmission({ ...hiddenTests, mastery });
+          setMessage(`${hiddenTests.passed} of ${hiddenTests.total} hidden tests passed. Loop mastery was updated for this session.`);
+          const viva = prepareVivaForSubmit(submittedSource);
+          setVivaQuestions(viva.questions);
+          setVivaMessage(viva.message);
         } else {
-          setErrorCode("PYODIDE_UNAVAILABLE");
-          setMessage("The local Python runtime could not start. Check the browser connection and try again.");
+          setExecution({ status: "completed", output: result.output, provider: "pyodide-local" });
+          setMessage(result.output.length > 0 ? "Python ran locally in your browser." : "Python ran locally with no output.");
         }
       } finally {
+        setPythonLoading(false);
         setPending(false);
       }
       return;
@@ -318,7 +339,6 @@ export function CodeEditor() {
           return;
         }
         setSubmission(candidate.data);
-        setProviderReady(true);
         setMessage(`${candidate.data.passed} of ${candidate.data.total} hidden tests passed. Loop mastery was updated.`);
         if (action === "submit") {
           const viva = prepareVivaForSubmit(submittedSource);
@@ -335,7 +355,6 @@ export function CodeEditor() {
       }
 
       setExecution(candidate.data);
-      setProviderReady(true);
       setMessage(describeResult(candidate.data));
     } catch (error) {
       if (error instanceof DOMException && error.name === "TimeoutError") {
@@ -425,7 +444,7 @@ export function CodeEditor() {
     }}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
       <div className="flex items-center gap-3"><span className="flex items-center gap-1.5" aria-hidden="true"><i className="size-2 rounded-full bg-[#ff6b62]" /><i className="size-2 rounded-full bg-[#f4bd4f]" /><i className="size-2 rounded-full bg-[#55c86a]" /></span><span className="text-xs font-bold text-white/85">solution</span><span className="text-xs text-white/40">/</span><label htmlFor="language" className="sr-only">Editor language</label><select id="language" value={language} disabled={pending} onChange={(event) => changeLanguage(event.target.value as CodeExecutionRequest["language"])} className="rounded-lg border border-white/10 bg-[#18262e] px-2.5 py-1.5 text-xs font-semibold text-white/80 disabled:opacity-60"><option value="typescript">TypeScript</option><option value="javascript">JavaScript</option><option value="python">Python</option></select></div>
-      <div className="flex items-center gap-2"><span title="Provider status" className="hidden items-center gap-1.5 text-[11px] text-[#e8bd64] sm:inline-flex"><Settings2 size={13} /> {providerReady ? "Python runner ready" : language === "python" ? "Local Python runner" : "Server provider required"}</span><MagneticButton><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className={`relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-60 ${pending ? "animate-pulse" : ""}`}>{pending && <span className="absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-white/35 animate-[shimmer_1.2s_infinite]" />}<Play size={13} fill="currentColor" /> {pending ? "Running" : "Run"}</button></MagneticButton></div>
+      <div className="flex items-center gap-2"><span title="Provider status" className="hidden items-center gap-1.5 text-[11px] text-[#e8bd64] sm:inline-flex"><Settings2 size={13} /> {language === "python" ? "Runs locally in your browser" : "Provider not configured"}</span><MagneticButton><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className={`relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-60 ${pending ? "animate-pulse" : ""}`}>{pending && <span className="absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-white/35 animate-[shimmer_1.2s_infinite]" />}<Play size={13} fill="currentColor" /> {pending ? (pythonLoading ? "Loading Python runtime…" : "Running") : "Run"}</button></MagneticButton><button type="button" onClick={() => void requestExecution("submit")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg border border-brand/40 px-3 py-2 text-xs font-bold text-brand hover:bg-brand/10 disabled:opacity-60"><Send size={13} /> Submit</button><button type="button" onClick={() => void requestExecution("hostile")} disabled={pending} className="hidden rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white/65 hover:border-brand/50 hover:text-brand disabled:opacity-60 sm:inline-flex">Try hostile input</button></div>
     </div>
     <div className="h-[390px] bg-[#10161a]">
       <Monaco height="390px" theme="vs-dark" language={language} value={sourceCode} onChange={(value) => changeSourceCode(value ?? "")} onMount={onEditorMount} options={{ minimap: { enabled: false }, readOnly: pending, fontSize: 13, tabSize: 2, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true, wordWrap: "on", lineNumbersMinChars: 3 }} />
@@ -477,7 +496,7 @@ export function CodeEditor() {
           : <p className="mt-2 text-xs text-white/50">Provider returned no output.</p>)}
       </div>
     </div>
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#10161a] px-4 py-2 text-[10px] uppercase tracking-[.12em] text-white/35"><span>{sourceCode.length.toLocaleString()} chars</span><span>{language}</span><span className="text-[#e8bd64]">{providerReady ? "Python runner ready" : language === "python" ? "Local Python runner" : "Server provider required"}</span></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#10161a] px-4 py-2 text-[10px] uppercase tracking-[.12em] text-white/35"><span>{sourceCode.length.toLocaleString()} chars</span><span>{language}</span><span className="text-[#e8bd64]">{language === "python" ? "Runs locally in your browser" : "Provider not configured"}</span></div>
     </div>
     {timelineError && <p role="status" className="rounded-xl border border-[#725b36] bg-[#292318] px-4 py-3 text-xs text-[#e8d4ad]">{timelineError}</p>}
     <SessionReplay key={sessionId} sessionId={sessionId || "loading"} events={timeline} onStartNewAttempt={startNewAttempt} />

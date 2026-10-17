@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { SkillPathLogo } from "@/components/layout/skillpath-logo";
 import type { AppRole } from "@/lib/auth/authorization";
 import type { ApiResponse } from "@/types/api";
 
@@ -50,7 +51,9 @@ export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleM
 
   return (
     <div className="w-full max-w-md">
-      <Link href="/" className="text-xs font-semibold text-white/55 transition hover:text-white">← SkillPath home</Link>
+      <Link href="/" aria-label="SkillPath home" className="inline-flex">
+        <SkillPathLogo dark />
+      </Link>
       <div className="mt-8 border border-[var(--line)] bg-[var(--panel)] p-6 sm:p-8">
         <p className="text-[11px] font-bold uppercase tracking-[.16em] text-brand">{role} workspace</p>
         <h1 className="mt-3 text-3xl font-bold text-ink">Sign in</h1>

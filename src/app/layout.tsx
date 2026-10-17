@@ -7,6 +7,11 @@ export const metadata: Metadata = {
   title: { default: "SkillPath — Learn with direction.", template: "%s | SkillPath" },
   description: "A coding path shaped around what you know—and what you need next.",
   applicationName: "SkillPath",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

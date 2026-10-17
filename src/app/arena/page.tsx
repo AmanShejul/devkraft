@@ -26,6 +26,6 @@ export default function ArenaPage() {
       </aside>
       <section aria-label="Code editor and results"><CodeEditor /></section>
     </div>
-    <p className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-xs leading-5 text-muted"><strong className="text-ink">Run code</strong> runs the visible sample. <strong className="text-ink">Submit</strong> runs five hidden cases and updates your saved loops mastery. Both require a configured server-side Judge0 or JDoodle provider. Use <strong className="text-ink">Try hostile input</strong> to verify the 12-second timeout.</p>
+    <p className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-xs leading-5 text-muted"><strong className="text-ink">Python</strong> runs visible code, hidden checks, and the hostile-input timeout locally in your browser. <strong className="text-ink">TypeScript</strong> and <strong className="text-ink">JavaScript</strong> still require the configured server execution provider.</p>
   </PageLayout>;
 }

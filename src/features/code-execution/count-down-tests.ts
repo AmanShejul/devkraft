@@ -21,7 +21,7 @@ export type CountDownExecutionOutcome =
   | { kind: "hidden-tests"; result: CountDownTestResult }
   | Exclude<ExecutionOutcome, { kind: "result" }>;
 
-function buildCountDownHarness(language: CodeExecutionRequest["language"]): string {
+export function buildCountDownHarness(language: CodeExecutionRequest["language"]): string {
   if (language === "python") {
     return `
 import json
