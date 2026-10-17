@@ -4,6 +4,67 @@ import { POST } from "@/app/api/teacher/questions/route";
 afterEach(() => vi.unstubAllEnvs());
 
 describe("teacher question API safety", () => {
+  it("extracts a text-based PDF locally in Ollama mode without calling Gemini", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "must-not-be-used");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("OLLAMA_BASE_URL", "http://ollama.test");
+    const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      expect(url).toBe("http://ollama.test/api/generate");
+      const requestBody = JSON.parse(String(init?.body)) as { prompt: string };
+      const sourceChunkId = requestBody.prompt.match(/\[([^\s]+) \| page/)?.[1] ?? "missing";
+      const options = ["tables", "primary keys", "records", "relational database", "queries"];
+      return Response.json({ response: JSON.stringify({
+        questions: [
+          ["Which structure organizes records in a relational database?", "tables"],
+          ["What connects tables in the source material?", "primary keys"],
+          ["What do tables organize in the described database?", "records"],
+          ["Which key type connects tables here?", "primary keys"],
+          ["Which database is described as organizing records?", "relational database"],
+        ].map(([prompt, correctAnswer]) => ({ prompt, options, correctAnswer, explanation: `The source explains ${correctAnswer} clearly.`, sourceChunkId })),
+        visualExplanation: { title: "Relational tables", summary: "Tables organize records and connect through keys.", nodes: [
+          { id: "tables", label: "Tables", description: "Tables organize records.", sourceChunkId },
+          { id: "keys", label: "Primary keys", description: "Primary keys connect tables.", sourceChunkId },
+        ], edges: [{ from: "tables", to: "keys", label: "connect through" }] },
+      }) });
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    const stream = "BT\n/F1 12 Tf\n72 700 Td\n(A relational database organizes records into tables. Tables connect through primary keys.) Tj\nET\n";
+    const pdf = `%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}endstream\nendobj\n%%EOF`;
+    const form = new FormData();
+    form.set("file", new File([pdf], "notes.pdf", { type: "application/pdf" }));
+    form.set("topic", "Relational model");
+    form.set("generationPreference", "ollama");
+    form.set("count", "5");
+
+    const response = await POST(new Request("http://localhost/api/teacher/questions", { method: "POST", body: form }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.generationProvider).toBe("ollama");
+    expect(payload.data.questions).toHaveLength(5);
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it("reports that OCR is needed instead of falling back to Gemini for a scanned PDF", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "must-not-be-used");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+    const form = new FormData();
+    form.set("file", new File(["%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 0 >>\nstream\nendstream\nendobj\n%%EOF"], "scan.pdf", { type: "application/pdf" }));
+    form.set("generationPreference", "ollama");
+
+    const response = await POST(new Request("http://localhost/api/teacher/questions", { method: "POST", body: form }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error.code).toBe("PDF_OCR_REQUIRED");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it("rejects a request without an uploaded document before calling either model", async () => {
     vi.stubEnv("GEMINI_API_KEY", "");
     const response = await POST(new Request("http://localhost/api/teacher/questions", { method: "POST", body: new FormData() }));
@@ -35,7 +96,7 @@ describe("teacher question API safety", () => {
     const response = await POST(new Request("http://localhost/api/teacher/questions", { method: "POST", body: form }));
 
     expect(response.status).toBe(422);
-    expect((await response.json()).error.code).toBe("DOCUMENT_EXTRACTION_FAILED");
+    expect((await response.json()).error.code).toBe("PDF_MALFORMED");
   });
 
   it("uses Ollama to generate grounded questions for text when Gemini is not configured", async () => {

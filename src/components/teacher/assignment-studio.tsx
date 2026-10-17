@@ -32,7 +32,7 @@ export function AssignmentStudio() {
   const [message, setMessage] = useState("");
   const [direction, setDirection] = useState("");
   const [personalizationDifficulty, setPersonalizationDifficulty] = useState<QuestionDifficulty>("intermediate");
-  const [generationPreference, setGenerationPreference] = useState<"auto" | "ollama">("auto");
+  const [generationPreference, setGenerationPreference] = useState<"auto" | "ollama" | "gemini">("auto");
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -320,9 +320,10 @@ export function AssignmentStudio() {
             <input value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="e.g. Use beginner-friendly real-world scenarios" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
           </label>
           <label className="text-xs font-semibold text-white/75 sm:col-span-2">Question generation model
-            <select value={generationPreference} onChange={(event) => setGenerationPreference(event.target.value as "auto" | "ollama")} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
+            <select value={generationPreference} onChange={(event) => setGenerationPreference(event.target.value as "auto" | "ollama" | "gemini")} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
               <option value="auto">Automatic: Gemini with local fallback</option>
               <option value="ollama">Local Ollama</option>
+              <option value="gemini">Gemini only</option>
             </select>
             <span className="mt-1 block font-normal leading-5 text-muted">Choose local Ollama if you want to bypass Gemini for this generation.</span>
           </label>
