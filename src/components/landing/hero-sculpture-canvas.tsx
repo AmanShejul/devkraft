@@ -109,7 +109,7 @@ export default function HeroSculptureCanvas() {
       const ambientTime = Math.max(0, timestamp - startTime - INTRO_DURATION);
       const rotation = motionQuery.matches
         ? 0
-        : -(ambientTime / 1000) * (Math.PI / 180) * 0.3;
+        : -(ambientTime / 1000) * (Math.PI / 180) * 2.1;
       context.save();
       context.translate(centerX, centerY);
       context.rotate(rotation);
