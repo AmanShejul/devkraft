@@ -10,7 +10,7 @@ export function PageTransition({ children }: { children: ReactNode }) {
 
   return (
     <MotionConfig reducedMotion="user">
-      <AnimatePresence mode="wait" initial={false}>
+      <AnimatePresence mode="wait">
         <motion.div
           key={pathname}
           initial={reduceMotion ? false : { opacity: 0, y: 8 }}

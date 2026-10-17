@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, GraduationCap, LockKeyhole, Mail, Presentation, Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { SkillPathLogo } from "@/components/layout/skillpath-logo";
 import type { AppRole } from "@/lib/auth/authorization";
 import type { ApiResponse } from "@/types/api";
 
@@ -63,9 +62,6 @@ export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleM
       </div>
 
       <div className="relative z-10 w-full max-w-[900px] animate-[auth-card-enter_.7s_cubic-bezier(.2,.75,.25,1)_both]">
-        <Link href="/" aria-label="SkillPath home" className="mb-5 inline-flex transition-opacity hover:opacity-80 sm:mb-6">
-          <SkillPathLogo dark />
-        </Link>
         <section className="relative overflow-hidden rounded-[26px] border border-white/[.11] bg-[linear-gradient(145deg,rgba(26,31,37,.94),rgba(15,18,22,.94))] shadow-[0_30px_100px_rgba(0,0,0,.42),0_0_70px_rgba(232,185,106,.045)] backdrop-blur-2xl md:flex">
           <div className="pointer-events-none absolute inset-x-8 top-0 z-10 h-px bg-gradient-to-r from-transparent via-brand/70 to-transparent" aria-hidden="true" />
 
