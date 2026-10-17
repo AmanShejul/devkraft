@@ -24,7 +24,6 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [registering, setRegistering] = useState(false);
   const [error, setError] = useState(roleMismatch ? "This account does not have access to this workspace." : "");
   const [pending, setPending] = useState(false);
   const supabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -101,12 +100,9 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
         <h1 className="mt-3 text-3xl font-bold text-ink">Sign in</h1>
         <p className="mt-2 text-sm leading-6 text-muted">Use the {role} account assigned to you.</p>
 
-        {role === "student" && demoMode ? <div className="mt-5 flex items-center justify-between gap-3 border border-brand/25 bg-brand/[.05] px-3 py-3">
-          <div><p className="text-[10px] font-bold uppercase tracking-[.13em] text-brand">Demo mode</p><p className="mt-1 text-xs leading-5 text-muted">{registering ? "Create a profile with any email or name." : "Any non-empty email or name and password works."} Passwords are not stored.</p></div>
-          <div className="flex shrink-0 border border-[var(--line)] p-1" role="group" aria-label="Student demo account action">
-            <button type="button" aria-pressed={!registering} onClick={() => setRegistering(false)} className={`px-2.5 py-2 text-[11px] font-semibold ${registering ? "text-muted" : "bg-brand text-[#171411]"}`}>Login</button>
-            <button type="button" aria-pressed={registering} onClick={() => setRegistering(true)} className={`px-2.5 py-2 text-[11px] font-semibold ${registering ? "bg-brand text-[#171411]" : "text-muted"}`}>Register</button>
-          </div>
+        {role === "student" && demoMode ? <div className="mt-5 border border-brand/25 bg-brand/[.05] px-3 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-[.13em] text-brand">Demo access</p>
+          <p className="mt-1 text-xs leading-5 text-muted">Enter any email or name and any password to continue. No registration is required and passwords are not stored.</p>
         </div> : !supabaseConfigured && (
           <p className="mt-5 border-l-2 border-brand px-3 py-2 text-xs leading-5 text-muted">
             {role === "teacher" ? "Local teacher access is available while authentication is being configured. Set the Supabase URL and anon key to enforce account roles." : "Authentication is not configured yet. Set the Supabase URL and anon key to enable sign-in."}
@@ -117,7 +113,7 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <label className="block text-xs font-semibold text-white/75">
-            Email
+            {role === "student" && demoMode ? "Email or name" : "Email"}
             <input
               type={role === "student" && demoMode ? "text" : "email"}
               name="email"
@@ -134,7 +130,7 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
               <input
                 type={showPassword ? "text" : "password"}
                 name="password"
-                autoComplete={registering ? "new-password" : "current-password"}
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -150,16 +146,16 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
             disabled={pending || (!supabaseConfigured && role === "student" && !demoMode)}
             className="w-full bg-brand px-4 py-3 text-sm font-bold text-[#171411] transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? "Signing in..." : role === "student" && demoMode && registering ? "Create demo profile" : supabaseConfigured || role !== "teacher" ? `Sign in as ${role}` : "Enter teacher workspace"}
+            {pending ? "Signing in..." : supabaseConfigured || role !== "teacher" ? `Sign in as ${role}` : "Enter teacher workspace"}
           </button>
         </form>
 
-        <p className="mt-6 border-t border-[var(--line)] pt-5 text-xs text-muted">
+        {!(role === "student" && demoMode) && <p className="mt-6 border-t border-[var(--line)] pt-5 text-xs text-muted">
           {role === "teacher" ? "Need student access?" : "Are you a teacher?"}{" "}
           <Link href={roleLoginPaths[otherRole]} className="font-semibold text-brand hover:text-brand-dark">
             Sign in as {otherRole}
           </Link>
-        </p>
+        </p>}
       </div>
     </div>
   );
