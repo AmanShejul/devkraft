@@ -234,4 +234,24 @@ describe("teacher question API safety", () => {
     expect(payload.error.code).toBe("OLLAMA_UNREACHABLE");
     expect(payload.error.message).toMatch(/Start Ollama/);
   });
+
+  it("explains when Ollama returns JSON outside the question contract", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("OLLAMA_BASE_URL", "http://ollama.test");
+    const mockFetch = vi.fn(async () => Response.json({ response: JSON.stringify({ unexpected: true }) }));
+    vi.stubGlobal("fetch", mockFetch);
+    const form = new FormData();
+    form.set("file", new File(["A breadth-first search uses a queue to explore each level of a graph."], "bfs.txt", { type: "text/plain" }));
+    form.set("generationPreference", "ollama");
+
+    const response = await POST(new Request("http://localhost/api/teacher/questions", { method: "POST", body: form }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error.code).toBe("INVALID_GENERATED_RESPONSE");
+    expect(payload.error.message).toMatch(/did not match the required question format/);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });

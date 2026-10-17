@@ -41,7 +41,7 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
-        const payload = await response.json() as ApiResponse<{ profile: { email: string }; created: boolean; demoMode: true }>;
+        const payload = await response.json() as ApiResponse<{ demoMode: true }>;
         if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Student demo access could not be created." : payload.error.message);
         setPassword("");
         router.replace(workspacePaths.student);

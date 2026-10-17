@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { listPublishedAssignments } from "@/features/teacher-portal/server-store";
 import { saveDemoStudentEvent } from "@/features/student-portal/events";
-import { touchDemoStudentProfile } from "@/features/student-portal/demo-profile-store";
 import { getStudentSession } from "@/lib/auth/student-session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { apiFailure, apiSuccess } from "@/types/api";
@@ -34,7 +33,6 @@ export async function POST(request: Request): Promise<Response> {
     const event = { learnerId: session.id, assignmentId: assignment.id, topicId: assignment.topicId, type: parsed.data.type, conceptId: parsed.data.conceptId, metadata: parsed.data.metadata };
     if (session.mode === "demo") {
       const stored = await saveDemoStudentEvent(event);
-      await touchDemoStudentProfile(session.id);
       return Response.json(apiSuccess({ id: stored.id, occurredAt: stored.occurredAt }));
     }
 

@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
 import { hasAppRole } from "@/lib/auth/authorization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getDemoStudentProfile } from "@/features/student-portal/demo-profile-store";
 
 const DEMO_STUDENT_COOKIE = "skillpath_demo_student_id";
 const LEARNER_COOKIE = "skillpath_learner_id";
@@ -24,8 +23,7 @@ export async function getStudentSession(): Promise<StudentSession | null> {
   if (isStudentDemoModeEnabled()) {
     const id = cookieStore.get(DEMO_STUDENT_COOKIE)?.value;
     if (!id || !studentIdPattern.test(id)) return null;
-    const profile = await getDemoStudentProfile(id);
-    return profile ? { id: profile.id, email: profile.email, mode: "demo", createdAt: profile.createdAt, lastActivityAt: profile.lastActivityAt } : null;
+    return { id, email: "demo-student", mode: "demo" };
   }
 
   const supabase = await createSupabaseServerClient();
@@ -58,5 +56,5 @@ export async function isDemoStudentIdentity(id: string): Promise<boolean> {
   if (!isStudentDemoModeEnabled()) return false;
   const cookieStore = await cookies();
   if (cookieStore.get(DEMO_STUDENT_COOKIE)?.value !== id) return false;
-  return (await getDemoStudentProfile(id)) !== null;
+  return studentIdPattern.test(id);
 }

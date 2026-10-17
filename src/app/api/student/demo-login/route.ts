@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { findOrCreateDemoStudent } from "@/features/student-portal/demo-profile-store";
+import { randomUUID } from "node:crypto";
 import { clearDemoStudentSession, isStudentDemoModeEnabled, setDemoStudentSession } from "@/lib/auth/student-session";
 import { apiFailure, apiSuccess } from "@/types/api";
 
@@ -17,13 +17,8 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = credentialsSchema.safeParse(body);
   if (!parsed.success) return Response.json(apiFailure("INVALID_CREDENTIALS", "Enter any non-empty email or name and password."), { status: 400 });
 
-  try {
-    const { profile, created } = await findOrCreateDemoStudent(parsed.data.email);
-    await setDemoStudentSession(profile.id);
-    return Response.json(apiSuccess({ profile, created, demoMode: true }));
-  } catch {
-    return Response.json(apiFailure("DEMO_PROFILE_SAVE_FAILED", "The demo profile could not be saved. Please retry."), { status: 500 });
-  }
+  await setDemoStudentSession(randomUUID());
+  return Response.json(apiSuccess({ demoMode: true }));
 }
 
 export async function DELETE(): Promise<Response> {
