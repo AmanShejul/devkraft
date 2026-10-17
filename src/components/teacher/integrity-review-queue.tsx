@@ -42,10 +42,10 @@ function readLocalSessions(): ReviewSession[] {
 
 export function IntegrityReviewQueue() {
   const [sessions, setSessions] = useState<ReviewSession[]>([]);
-  const [openKey, setOpenKey] = useState<string | null>(null);
 
   useEffect(() => {
-    const refresh = () => setSessions([...createSampleReviewSessions(), ...readLocalSessions()]);
+    const sampleSessions = createSampleReviewSessions();
+    const refresh = () => setSessions([...sampleSessions, ...readLocalSessions()]);
     refresh();
     window.addEventListener("storage", refresh);
     const interval = window.setInterval(refresh, 1_500);
@@ -73,18 +73,17 @@ export function IntegrityReviewQueue() {
 
     {rows.length === 0 ? <p className="px-5 py-8 text-sm text-muted sm:px-7">No sessions flagged for review yet.</p> : <div className="divide-y divide-white/10 px-5 py-2 sm:px-7">
       {rows.map((row) => {
-        const isOpen = openKey === row.key;
-        return <div key={row.key} className="py-3">
-          <button type="button" onClick={() => setOpenKey(isOpen ? null : row.key)} aria-expanded={isOpen} className="group flex w-full flex-wrap items-center gap-4 rounded-xl px-3 py-3 text-left transition hover:bg-white/[.035]">
+        return <details key={row.key} className="group py-3">
+          <summary className="flex w-full cursor-pointer list-none flex-wrap items-center gap-4 rounded-xl px-3 py-3 text-left transition hover:bg-white/[.035] [&::-webkit-details-marker]:hidden">
             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#3b211f]/70 text-[#ffb3aa]"><Flag size={15} /></span>
             <span className="min-w-[150px] flex-1"><span className="flex flex-wrap items-center gap-2"><strong className="text-sm text-ink">{row.session.learnerName}</strong><Badge tone="gray">{row.session.isSample ? "SAMPLE DATA" : "LOCAL SESSION"}</Badge></span><span className="mt-1 block font-mono text-[11px] text-muted">Session {row.session.sessionId.slice(0, 8)}</span></span>
             <span className="min-w-[150px] text-xs font-semibold text-[#f0c0b8]">{signalLabel(row.signal.kind)}</span>
             <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.12em] ${row.signal.severity === "review" ? "border-[#b35c53]/45 bg-[#3b211f]/70 text-[#ffb3aa]" : "border-white/10 bg-white/[.04] text-white/55"}`}>{row.signal.severity}</span>
             <time dateTime={row.signal.occurredAt} className="w-full text-[11px] tabular-nums text-white/40 sm:w-auto">{formatTimestamp(row.signal.occurredAt)}</time>
-            <ChevronDown size={16} className={`shrink-0 text-white/35 transition-transform ${isOpen ? "rotate-180" : ""}`} />
-          </button>
-          {isOpen && <div className="mt-2 rounded-2xl border border-white/10 bg-black/20 p-2 sm:p-3"><SessionReplay key={row.key} sessionId={row.session.sessionId} events={row.session.events} initialTimestamp={row.signal.occurredAt} onStartNewAttempt={() => setOpenKey(null)} /></div>}
-        </div>;
+            <ChevronDown size={16} className="shrink-0 text-white/35 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-2 rounded-2xl border border-white/10 bg-black/20 p-2 sm:p-3"><SessionReplay key={row.key} sessionId={row.session.sessionId} events={row.session.events} initialTimestamp={row.signal.occurredAt} /></div>
+        </details>;
       })}
     </div>}
   </SectionCard>;

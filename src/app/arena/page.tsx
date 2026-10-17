@@ -6,10 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { SectionCard } from "@/components/ui/section-card";
 import { CodeEditor } from "@/components/coding/code-editor";
 import { MentorPanel } from "@/components/learning/mentor-panel";
+import { getStudentSession } from "@/lib/auth/student-session";
 
 export const metadata: Metadata = { title: "Coding arena" };
 
-export default function ArenaPage() {
+export default async function ArenaPage() {
+  const session = await getStudentSession();
   return <PageLayout>
     <Link href="/student" className="mb-6 inline-flex items-center gap-1.5 text-xs font-bold text-muted hover:text-brand"><ArrowLeft size={14} /> Student workspace</Link>
     <PageIntro eyebrow="Coding arena" title="Count it down." description="Practice tracing a loop, then write a function that counts from a starting value down to one." />
@@ -24,8 +26,8 @@ export default function ArenaPage() {
         </SectionCard>
         <MentorPanel />
       </aside>
-      <section aria-label="Code editor and results"><CodeEditor /></section>
+      <section aria-label="Code editor and results"><CodeEditor learnerId={session?.id} /></section>
     </div>
-    <p className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-xs leading-5 text-muted"><strong className="text-ink">Python</strong> runs visible code, hidden checks, and the hostile-input timeout locally in your browser. <strong className="text-ink">TypeScript</strong> and <strong className="text-ink">JavaScript</strong> still require the configured server execution provider.</p>
+    <p className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-xs leading-5 text-muted"><strong className="text-ink">Python and JavaScript</strong> run visible code, hidden checks, and hostile-input timeout tests locally in your browser. <strong className="text-ink">TypeScript</strong> still uses the configured server execution provider.</p>
   </PageLayout>;
 }

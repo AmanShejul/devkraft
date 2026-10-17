@@ -52,10 +52,16 @@ export async function GET(): Promise<Response> {
           submittedAt: attempt.submittedAt,
           score: attempt.score,
           total: attempt.total,
-          responses: attempt.responses.map((response) => ({
-            ...response,
-            prompt: assignmentById.get(attempt.assignmentId)?.questions.find((question) => question.id === response.questionId)?.prompt ?? "Question unavailable",
-          })),
+          responses: attempt.responses.map((response) => {
+            const question = assignmentById.get(attempt.assignmentId)?.questions.find((item) => item.id === response.questionId);
+            return {
+              ...response,
+              prompt: question?.prompt ?? "Question unavailable",
+              correctAnswer: question?.correctAnswer ?? null,
+              explanation: question?.explanation ?? null,
+              sourceExcerpt: question?.source.excerpt ?? null,
+            };
+          }),
         })),
       };
     });

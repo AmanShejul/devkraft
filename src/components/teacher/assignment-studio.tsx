@@ -5,7 +5,6 @@ import { BookOpen, Check, FilePlus2, FileText, LoaderCircle, Send, Upload, WandS
 import { SectionCard } from "@/components/ui/section-card";
 import {
   personalizeDraftQuestions,
-  type AssignmentSubmission,
   type DraftQuestion,
   type LearningStage,
   type QuestionDifficulty,
@@ -13,6 +12,7 @@ import {
 } from "@/features/teacher-portal/question-drafts";
 import type { ApiResponse } from "@/types/api";
 import type { GeneratedQuestion, TeacherQuizSet, VisualExplanation } from "@/features/teacher-portal/contracts";
+import { draftQuestionsFromNotes } from "@/features/teacher-portal/local-question-drafts";
 
 const difficultyOptions: QuestionDifficulty[] = ["foundation", "intermediate", "advanced"];
 const textDocumentPattern = /\.(txt|md|markdown|csv|js|jsx|ts|tsx|py|java|c|cc|cpp|cs|go|rs|rb|php|html|css|json|sql)$/i;
@@ -40,6 +40,7 @@ export function AssignmentStudio() {
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [generationSeconds, setGenerationSeconds] = useState(0);
   const [generationFailed, setGenerationFailed] = useState(false);
+  const [localDrafted, setLocalDrafted] = useState(false);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const questionsRef = useRef<HTMLDivElement>(null);
 
@@ -151,6 +152,7 @@ export function AssignmentStudio() {
     setGeneratingPdf(true);
     setGenerationSeconds(0);
     setGenerationFailed(false);
+    setLocalDrafted(false);
     setQuestions([]);
     setMessage("Preparing your notes for question generation…");
     try {
@@ -168,6 +170,7 @@ export function AssignmentStudio() {
       if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Questions could not be created right now." : payload.error.message);
       const generatedQuestions = payload.data.questions.map((question) => ({ id: question.id, prompt: question.prompt, answer: question.correctAnswer, source: question.source.excerpt, difficulty: question.difficulty, options: question.options, explanation: question.explanation, sourceDocumentId: question.source.documentId, sourcePage: question.source.page, reviewStatus: "draft" as const, generationStatus: question.generationStatus }));
       setQuestions(generatedQuestions);
+      setLocalDrafted(false);
       setVisualExplanation(payload.data.visualExplanation);
       setContent((current) => current || `Questions generated from ${payload.data.sourceFile}.`);
       const providerName = payload.data.generationProvider === "ollama" ? "local Ollama" : "Gemini";
@@ -182,6 +185,20 @@ export function AssignmentStudio() {
     } finally {
       setGeneratingPdf(false);
     }
+  }
+
+  function draftWithoutAi() {
+    const count = learningStage === "diagnostic" ? 5 : 7;
+    const drafts = draftQuestionsFromNotes(content, count, personalizationDifficulty);
+    if (drafts.length === 0) {
+      setMessage("No question-ready sentences were found in the notes. Add substantive sentences with specific terms, numbers, or concepts and try again.");
+      return;
+    }
+    setQuestions(drafts);
+    setVisualExplanation(null);
+    setGenerationFailed(false);
+    setLocalDrafted(true);
+    setMessage(`Drafted ${drafts.length} questions locally — no AI was used. Review every answer and source, then approve before publishing.`);
   }
 
   function updateQuestion(id: string, patch: Partial<DraftQuestion>) {
@@ -281,7 +298,6 @@ export function AssignmentStudio() {
   }
 
   const published = assignments.filter((assignment) => assignment.status === "published");
-  const recentSubmissions: AssignmentSubmission[] = [];
   const approvedQuestionCount = questions.filter((question) => question.generationStatus === "grounded" && question.reviewStatus === "reviewed").length;
   const validQuestionCount = learningStage === "diagnostic"
     ? questions.length >= 4 && questions.length <= 5
@@ -370,7 +386,10 @@ export function AssignmentStudio() {
         {generationFailed && <div role="alert" className="mt-4 border border-[#7a3535] bg-[#241719] px-4 py-3 text-sm text-[#ffb3aa]">
           <p className="font-semibold">Question generation failed</p>
           <p className="mt-1 text-xs leading-5">{message}</p>
-          <button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf || (!content.trim() && !selectedPdfName)} className="mt-3 inline-flex items-center gap-2 border border-[#ffb3aa]/40 px-3 py-2 text-xs font-semibold text-[#ffb3aa] hover:bg-[#ffb3aa]/10 disabled:cursor-not-allowed disabled:opacity-50"><WandSparkles size={14} /> Retry generation</button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf || (!content.trim() && !selectedPdfName)} className="inline-flex items-center gap-2 border border-[#ffb3aa]/40 px-3 py-2 text-xs font-semibold text-[#ffb3aa] hover:bg-[#ffb3aa]/10 disabled:cursor-not-allowed disabled:opacity-50"><WandSparkles size={14} /> Retry generation</button>
+            {content.trim() && <button type="button" onClick={draftWithoutAi} disabled={generatingPdf} className="inline-flex items-center gap-2 border border-brand/45 px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-50">Draft without AI</button>}
+          </div>
         </div>}
 
         {generatingPdf && <div role="status" aria-live="polite" className="mt-5 overflow-hidden rounded-xl border border-brand/25 bg-brand/[.06] p-4">
@@ -397,7 +416,7 @@ export function AssignmentStudio() {
 
         {questions.length > 0 && (
           <div ref={questionsRef} id="generated-questions" className="mt-6 scroll-mt-6 space-y-4">
-            <div className="border-b border-white/10 pb-3"><h3 className="text-lg font-bold text-ink">Generated question drafts</h3><p className="mt-1 text-xs text-muted">Add the assignment details below after reviewing the questions.</p></div>
+            <div className="border-b border-white/10 pb-3"><div className="flex flex-wrap items-center gap-3"><h3 className="text-lg font-bold text-ink">Generated question drafts</h3>{localDrafted && <span className="rounded-full border border-brand/30 bg-brand/[.06] px-2.5 py-1 text-[10px] font-bold text-brand">Drafted locally — no AI</span>}</div><p className="mt-1 text-xs text-muted">Add the assignment details below after reviewing the questions.</p></div>
             {questions.map((question, index) => (
               <div key={question.id} style={{ animationDelay: `${Math.min(index * 70, 490)}ms` }} className="question-arrive border border-[var(--line)] bg-[#111518] p-4 sm:p-5">
                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -456,9 +475,12 @@ export function AssignmentStudio() {
       </SectionCard>
 
       <SectionCard>
-        <div className="flex items-center gap-3">
-          <span className="grid size-10 shrink-0 place-items-center bg-[#202c3a] text-[#b8d4f0]"><BookOpen size={18} /></span>
-          <div><h2 className="text-lg font-bold text-ink">Published assignments</h2><p className="mt-1 text-xs text-muted">Assignments currently visible in the student portal.</p></div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center bg-[#202c3a] text-[#b8d4f0]"><BookOpen size={18} /></span>
+            <div><h2 className="text-lg font-bold text-ink">Published assignments</h2><p className="mt-1 text-xs text-muted">Assignments currently visible in the student portal.</p></div>
+          </div>
+          <a href="#student-progress" className="text-xs font-semibold text-brand hover:text-brand-dark">Review student results</a>
         </div>
         {published.length === 0 ? <p className="mt-5 border-t border-[var(--line)] pt-4 text-sm text-muted">Nothing published yet.</p> : (
           <div className="mt-4 divide-y divide-[var(--line)]">
@@ -466,19 +488,6 @@ export function AssignmentStudio() {
           </div>
         )}
         {assignments.some((assignment) => assignment.status === "draft") && <div className="mt-4 border-t border-[var(--line)] pt-4"><h3 className="text-xs font-bold uppercase tracking-[.12em] text-muted">Saved drafts</h3><div className="mt-2 space-y-2">{assignments.filter((assignment) => assignment.status === "draft").map((assignment) => <button key={assignment.id} type="button" onClick={() => editDraft(assignment)} className="block text-left text-sm font-semibold text-brand hover:text-brand-dark">Edit {assignment.title}</button>)}</div></div>}
-      </SectionCard>
-
-      <SectionCard>
-        <div><h2 className="text-lg font-bold text-ink">Student submissions</h2><p className="mt-1 text-xs text-muted">Results will appear after students submit published assignments.</p></div>
-        {recentSubmissions.length === 0 ? <p className="mt-5 border-t border-[var(--line)] pt-4 text-sm text-muted">No student submissions yet.</p> : (
-          <div className="mt-4 divide-y divide-[var(--line)]">
-            {recentSubmissions.map((submission) => {
-              const assignment = assignments.find((item) => item.id === submission.assignmentId);
-              const correct = submission.results.filter((result) => result.correct).length;
-              return <div key={submission.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="text-sm font-semibold text-ink">{submission.learner}</p><p className="mt-1 text-xs text-muted">{assignment?.title ?? "Assignment"} · {new Date(submission.submittedAt).toLocaleString()}</p></div><span className="text-sm font-bold text-brand">{correct}/{submission.results.length}</span></div>;
-            })}
-          </div>
-        )}
       </SectionCard>
     </div>
   );

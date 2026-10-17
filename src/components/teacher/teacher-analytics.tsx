@@ -17,7 +17,10 @@ type TeacherAnalyticsData = {
     events: Array<{ id: string; type: string; topicId: string; assignmentId: string; conceptId: string | null; occurredAt: string }>;
     attempts: Array<{
       id: string; title: string; subject: string; topic: string; learningStage: string; submittedAt: string; score: number; total: number;
-      responses: Array<{ questionId: string; prompt: string; response: string; correct: boolean; conceptId: string | null }>;
+      responses: Array<{
+        questionId: string; prompt: string; response: string; correct: boolean; conceptId: string | null;
+        correctAnswer: string | null; explanation: string | null; sourceExcerpt: string | null;
+      }>;
     }>;
   }>;
   summary: { studentCount: number; activeStudents: number; needsHelpCount: number; publishedTopics: number; diagnosticAverage: number | null; practiceAverage: number | null };
@@ -71,7 +74,7 @@ export function TeacherAnalytics() {
           {expanded && <div className="mt-4 space-y-4 border-t border-[var(--line)] pt-4">
             <div><p className="text-[10px] font-bold uppercase tracking-[.12em] text-muted">Concepts to revisit</p><p className="mt-2 text-xs text-ink">{item.weakConcepts.length ? item.weakConcepts.map((concept) => `${concept.conceptId} (${concept.incorrectResponses} missed)`).join(" · ") : "No incorrect responses recorded."}</p></div>
             {item.events.length > 0 && <div><p className="text-[10px] font-bold uppercase tracking-[.12em] text-muted">Learning activity</p><div className="mt-2 flex flex-wrap gap-2">{item.events.map((event) => <span key={event.id} className="border border-[var(--line)] px-2 py-1 text-[10px] text-muted">{event.type.replaceAll("_", " ")} · {new Date(event.occurredAt).toLocaleString()}</span>)}</div></div>}
-            {item.attempts.map((attempt) => <section key={attempt.id} className="border-t border-white/10 pt-3"><div className="flex flex-wrap justify-between gap-2"><p className="text-xs font-semibold text-ink">{attempt.title} · {attempt.topic} · {attempt.learningStage}</p><p className="text-xs font-bold text-brand">{attempt.score}/{attempt.total} · {new Date(attempt.submittedAt).toLocaleString()}</p></div><div className="mt-2 space-y-2">{attempt.responses.map((response) => <div key={response.questionId} className="text-xs leading-5"><p className="text-white/75">{response.prompt}</p><p className={response.correct ? "text-emerald-300" : "text-amber-300"}>Student response: {response.response || "(blank)"} · {response.correct ? "Correct" : "Incorrect"}{response.conceptId ? ` · ${response.conceptId}` : ""}</p></div>)}</div></section>)}
+            {item.attempts.map((attempt) => <section key={attempt.id} className="border-t border-white/10 pt-3"><div className="flex flex-wrap justify-between gap-2"><p className="text-xs font-semibold text-ink">{attempt.title} · {attempt.topic} · {attempt.learningStage}</p><p className="text-xs font-bold text-brand">{attempt.score}/{attempt.total} · {new Date(attempt.submittedAt).toLocaleString()}</p></div><div className="mt-2 space-y-3">{attempt.responses.map((response) => <div key={response.questionId} className="border-l border-white/10 pl-3 text-xs leading-5"><p className="text-white/75">{response.prompt}</p><p className={response.correct ? "text-emerald-300" : "text-amber-300"}>Student response: {response.response || "(blank)"} · {response.correct ? "Correct" : "Incorrect"}{response.conceptId ? ` · ${response.conceptId}` : ""}</p>{response.correctAnswer && <p className="mt-1 text-emerald-200/80">Expected answer: {response.correctAnswer}</p>}{response.explanation && <p className="mt-1 text-muted">Explanation: {response.explanation}</p>}{response.sourceExcerpt && <p className="mt-1 text-muted/80">Source: {response.sourceExcerpt}</p>}</div>)}</div></section>)}
           </div>}
         </article>;
       })}</div>}

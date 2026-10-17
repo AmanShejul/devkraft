@@ -10,12 +10,14 @@ import type { ApiResponse } from "@/types/api";
 import { isCodeExecutionResult, type CodeExecutionRequest, type CodeExecutionResult, type ConceptMastery, type SessionEvent, type VivaEvaluation, type VivaQuestion } from "@/types/domain";
 import { buildCountDownHarness, parseCountDownTestOutput, type CountDownTestResult } from "@/features/code-execution/count-down-tests";
 import { updateMissionMasteryFromSubmission } from "@/features/code-execution/mastery";
-import { prepareVivaForSubmit } from "@/features/viva/viva";
+import { evaluateVivaAnswers, prepareVivaForSubmit, updateVivaMastery } from "@/features/viva/viva";
+import { countLocalVivaAttempt, getOrCreateBrowserLearnerId, hasLocalVivaAttempt, readLocalMasteryRecord, writeLocalMasteryRecord } from "@/features/assessments/local-mastery-store";
 import { SessionReplay } from "@/components/coding/session-replay";
 import { MagneticButton } from "@/components/ui/magnetic-button";
 import { AnimatedNumber } from "@/components/ui/text-animation";
 import { isStoredArenaSession, readStoredArenaSessions, SESSION_HISTORY_STORAGE_KEY, SESSION_STORAGE_KEY } from "@/features/integrity/session-storage";
 import { getStatus as getPyodideStatus, runPython } from "@/lib/pyodide/pyodide-client";
+import { runJavaScript } from "@/lib/js/js-client";
 
 const Monaco = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -36,13 +38,6 @@ function isApiFailure(payload: unknown): payload is Extract<ApiResponse<CodeExec
 
 interface CodeSubmissionResponse extends CountDownTestResult {
   mastery: { conceptId: string; probability: number; updatedAt?: string }[];
-}
-
-interface VivaResponse {
-  evaluations: VivaEvaluation[];
-  understandingScore: number;
-  mastery: { conceptId: string; probability: number; updatedAt?: string }[];
-  masteryCounted: boolean;
 }
 
 function isCodeSubmissionResponse(value: unknown): value is CodeSubmissionResponse {
@@ -108,7 +103,8 @@ function hasExecutionOutput(result: CodeExecutionResult) {
   return result.stdout.length > 0 || result.stderr.length > 0;
 }
 
-export function CodeEditor() {
+export function CodeEditor({ learnerId: initialLearnerId }: { learnerId?: string }) {
+  const [learnerId, setLearnerId] = useState(initialLearnerId ?? "");
   const [language, setLanguage] = useState<CodeExecutionRequest["language"]>("typescript");
   const [sourceCode, setSourceCode] = useState(starterCode.typescript);
   const [stdin, setStdin] = useState("");
@@ -131,6 +127,26 @@ export function CodeEditor() {
   const localPythonMastery = useRef<ConceptMastery[]>([]);
   const editorSubscription = useRef<IDisposable | null>(null);
   const recordEventRef = useRef<(kind: SessionEvent["kind"], payload?: SessionEvent["payload"]) => void>(() => {});
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const id = initialLearnerId ?? getOrCreateBrowserLearnerId();
+        setLearnerId(id);
+        localPythonMastery.current = readLocalMasteryRecord(id).mastery;
+      } catch (error) {
+        setTimelineError(error instanceof Error ? error.message : "Local mastery could not be loaded.");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialLearnerId]);
+
+  function saveLocalMastery(mastery: ConceptMastery[]) {
+    if (!learnerId) throw new Error("The learner profile is not ready for local progress.");
+    const current = readLocalMasteryRecord(learnerId);
+    writeLocalMasteryRecord(learnerId, { ...current, mastery });
+    localPythonMastery.current = mastery;
+  }
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -231,7 +247,11 @@ export function CodeEditor() {
     setVivaUnderstandingScore(null);
     setVivaMessage("");
     setErrorCode(undefined);
-    setMessage(nextLanguage === "python" ? "Python runs locally in your browser with Pyodide." : "Ready to run. Choose Run to execute your code.");
+    setMessage(nextLanguage === "python"
+      ? "Python runs locally in your browser with Pyodide."
+      : nextLanguage === "javascript"
+        ? "JavaScript runs locally in your browser."
+        : "TypeScript uses the server execution provider.");
   }
 
   function changeSourceCode(value: string) {
@@ -288,18 +308,69 @@ export function CodeEditor() {
             return;
           }
           const mastery = updateMissionMasteryFromSubmission(localPythonMastery.current, hiddenTests.passed / hiddenTests.total >= 0.6);
-          localPythonMastery.current = mastery;
+          try {
+            saveLocalMastery(mastery);
+          } catch (saveError) {
+            setTimelineError(saveError instanceof Error ? saveError.message : "Loop mastery could not be saved locally.");
+          }
           setSubmission({ ...hiddenTests, mastery });
-          setMessage(`${hiddenTests.passed} of ${hiddenTests.total} hidden tests passed. Loop mastery was updated for this session.`);
-          const viva = prepareVivaForSubmit(submittedSource);
-          setVivaQuestions(viva.questions);
-          setVivaMessage(viva.message);
+          const passedThreshold = hiddenTests.passed / hiddenTests.total >= 0.6;
+          setMessage(`${hiddenTests.passed} of ${hiddenTests.total} hidden tests passed.${passedThreshold ? " Loop mastery was updated locally." : " Pass at least 3 hidden tests to unlock the viva."}`);
+          if (passedThreshold) {
+            const viva = prepareVivaForSubmit(submittedSource);
+            setVivaQuestions(viva.questions);
+            setVivaMessage(viva.message);
+          }
         } else {
           setExecution({ status: "completed", output: result.output, provider: "pyodide-local" });
           setMessage(result.output.length > 0 ? "Python ran locally in your browser." : "Python ran locally with no output.");
         }
       } finally {
         setPythonLoading(false);
+        setPending(false);
+      }
+      return;
+    }
+    if (language === "javascript") {
+      setMessage(action === "run" ? "Running JavaScript locally…" : action === "hostile" ? "Running hostile input with a 12-second local timeout…" : "Running hidden tests locally…");
+      try {
+        const javascriptSource = action === "submit"
+          ? `${submittedSource}\n${buildCountDownHarness("javascript")}`
+          : submittedSource;
+        const result = await runJavaScript(javascriptSource);
+        if ("error" in result) {
+          const isTimeout = result.error.toLowerCase().includes("12-second");
+          setErrorCode(isTimeout ? "JAVASCRIPT_TIMEOUT" : "JAVASCRIPT_WORKER_ERROR");
+          setMessage(result.error);
+          return;
+        }
+
+        if (action === "submit") {
+          const hiddenTests = parseCountDownTestOutput(result.output);
+          if (!hiddenTests) {
+            setErrorCode("INVALID_JAVASCRIPT_OUTPUT");
+            setMessage("The JavaScript worker finished, but the hidden-test output was not valid. Check that countDown returns an array and try again.");
+            return;
+          }
+          const passedThreshold = hiddenTests.passed / hiddenTests.total >= 0.6;
+          const mastery = updateMissionMasteryFromSubmission(localPythonMastery.current, passedThreshold);
+          try {
+            saveLocalMastery(mastery);
+          } catch (saveError) {
+            setTimelineError(saveError instanceof Error ? saveError.message : "Loop mastery could not be saved locally.");
+          }
+          setSubmission({ ...hiddenTests, mastery });
+          setMessage(`${hiddenTests.passed} of ${hiddenTests.total} hidden tests passed.${passedThreshold ? " Loop mastery was updated locally." : " Pass at least 3 hidden tests to unlock the viva."}`);
+          if (passedThreshold) {
+            const viva = prepareVivaForSubmit(submittedSource);
+            setVivaQuestions(viva.questions);
+            setVivaMessage(viva.message);
+          }
+        } else {
+          setExecution({ status: "completed", output: result.output, provider: "javascript-local" });
+          setMessage(result.output.length > 0 ? "JavaScript ran locally in your browser." : "JavaScript ran locally with no output.");
+        }
+      } finally {
         setPending(false);
       }
       return;
@@ -340,7 +411,7 @@ export function CodeEditor() {
         }
         setSubmission(candidate.data);
         setMessage(`${candidate.data.passed} of ${candidate.data.total} hidden tests passed. Loop mastery was updated.`);
-        if (action === "submit") {
+        if (action === "submit" && candidate.data.passed / candidate.data.total >= 0.6) {
           const viva = prepareVivaForSubmit(submittedSource);
           setVivaQuestions(viva.questions);
           setVivaMessage(viva.message);
@@ -371,65 +442,29 @@ export function CodeEditor() {
 
   async function evaluateViva(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (vivaQuestions.length !== 3 || vivaQuestions.some((question) => !vivaAnswers[question.id]?.trim())) return;
+    if (vivaQuestions.length !== 3 || vivaQuestions.some((question) => !vivaAnswers[question.id]?.trim()) || !learnerId) return;
     setPending(true);
-    setVivaMessage("Evaluating your explanations with the local heuristic evaluator…");
+    setVivaMessage("Evaluating your explanations locally…");
     setVivaEvaluations([]);
     setVivaUnderstandingScore(null);
     try {
-      const response = await fetch("/api/viva/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          language,
-          sourceCode,
-          answers: vivaQuestions.map((question) => ({ questionId: question.id, answer: vivaAnswers[question.id] })),
-        }),
-        signal: AbortSignal.timeout(20_000),
-      });
-      let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch {
-        setVivaMessage("The viva API returned an unreadable response.");
-        return;
-      }
-      if (!response.ok || !payload || typeof payload !== "object" || (payload as { ok?: unknown }).ok !== true) {
-        const failure = payload && typeof payload === "object" ? (payload as { error?: { message?: unknown } }).error : undefined;
-        setVivaMessage(typeof failure?.message === "string" ? failure.message : "Your explanations could not be evaluated.");
-        return;
-      }
-      const data = (payload as { data?: unknown }).data;
-      if (!data || typeof data !== "object") {
-        setVivaMessage("The viva API response did not match its contract.");
-        return;
-      }
-      const result = data as Partial<VivaResponse>;
-      if (
-        !Array.isArray(result.evaluations)
-        || result.evaluations.length !== vivaQuestions.length
-        || !result.evaluations.every((evaluation) => evaluation
-          && typeof evaluation.questionId === "string"
-          && typeof evaluation.score === "number"
-          && Number.isFinite(evaluation.score)
-          && evaluation.score >= 0
-          && evaluation.score <= 1
-          && typeof evaluation.feedback === "string"
-          && evaluation.evaluatedBy === "heuristic")
-        || typeof result.understandingScore !== "number"
-        || typeof result.masteryCounted !== "boolean"
-        || !Array.isArray(result.mastery)
-      ) {
-        setVivaMessage("The viva API response did not match its contract.");
-        return;
-      }
-      setVivaEvaluations(result.evaluations);
-      setVivaUnderstandingScore(result.understandingScore);
-      setVivaMessage(result.masteryCounted
-        ? "Heuristic evaluation complete. Your loops mastery was updated."
-        : "Heuristic evaluation complete. This mission's viva mastery update was already counted.");
-    } catch {
-      setVivaMessage("Could not reach the viva evaluation API. Check your connection and try again.");
+      const evaluations = evaluateVivaAnswers(sourceCode, vivaQuestions.map((question) => ({
+        questionId: question.id,
+        answer: vivaAnswers[question.id],
+      })));
+      const current = readLocalMasteryRecord(learnerId);
+      const alreadyCounted = hasLocalVivaAttempt(learnerId, "countdown");
+      const update = updateVivaMastery(current.mastery, evaluations, new Date(), alreadyCounted);
+      writeLocalMasteryRecord(learnerId, { ...current, mastery: update.mastery });
+      if (!alreadyCounted) countLocalVivaAttempt(learnerId, "countdown");
+      localPythonMastery.current = update.mastery;
+      setVivaEvaluations(evaluations);
+      setVivaUnderstandingScore(update.understandingScore);
+      setVivaMessage(update.masteryCounted
+        ? "Heuristic evaluation complete. Your loops mastery was updated and this attempt was counted."
+        : "Heuristic evaluation complete. This mission's viva attempt was already counted, so mastery was not updated again.");
+    } catch (error) {
+      setVivaMessage(error instanceof Error ? error.message : "Your explanations could not be evaluated or saved locally.");
     } finally {
       setPending(false);
     }
@@ -444,7 +479,7 @@ export function CodeEditor() {
     }}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
       <div className="flex items-center gap-3"><span className="flex items-center gap-1.5" aria-hidden="true"><i className="size-2 rounded-full bg-[#ff6b62]" /><i className="size-2 rounded-full bg-[#f4bd4f]" /><i className="size-2 rounded-full bg-[#55c86a]" /></span><span className="text-xs font-bold text-white/85">solution</span><span className="text-xs text-white/40">/</span><label htmlFor="language" className="sr-only">Editor language</label><select id="language" value={language} disabled={pending} onChange={(event) => changeLanguage(event.target.value as CodeExecutionRequest["language"])} className="rounded-lg border border-white/10 bg-[#18262e] px-2.5 py-1.5 text-xs font-semibold text-white/80 disabled:opacity-60"><option value="typescript">TypeScript</option><option value="javascript">JavaScript</option><option value="python">Python</option></select></div>
-      <div className="flex items-center gap-2"><span title="Provider status" className="hidden items-center gap-1.5 text-[11px] text-[#e8bd64] sm:inline-flex"><Settings2 size={13} /> {language === "python" ? "Runs locally in your browser" : "Provider not configured"}</span><MagneticButton><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className={`relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-60 ${pending ? "animate-pulse" : ""}`}>{pending && <span className="absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-white/35 animate-[shimmer_1.2s_infinite]" />}<Play size={13} fill="currentColor" /> {pending ? (pythonLoading ? "Loading Python runtime…" : "Running") : "Run"}</button></MagneticButton><button type="button" onClick={() => void requestExecution("submit")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg border border-brand/40 px-3 py-2 text-xs font-bold text-brand hover:bg-brand/10 disabled:opacity-60"><Send size={13} /> Submit</button><button type="button" onClick={() => void requestExecution("hostile")} disabled={pending} className="hidden rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white/65 hover:border-brand/50 hover:text-brand disabled:opacity-60 sm:inline-flex">Try hostile input</button></div>
+      <div className="flex items-center gap-2"><span title="Provider status" className="hidden items-center gap-1.5 text-[11px] text-[#e8bd64] sm:inline-flex"><Settings2 size={13} /> {language === "typescript" ? "Provider not configured" : "Runs locally in your browser"}</span><MagneticButton><button type="button" onClick={() => void requestExecution("run")} disabled={pending} className={`relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] hover:bg-brand-dark disabled:opacity-60 ${pending ? "animate-pulse" : ""}`}>{pending && <span className="absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-white/35 animate-[shimmer_1.2s_infinite]" />}<Play size={13} fill="currentColor" /> {pending ? (pythonLoading ? "Loading Python runtime…" : "Running") : "Run"}</button></MagneticButton><button type="button" onClick={() => void requestExecution("submit")} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg border border-brand/40 px-3 py-2 text-xs font-bold text-brand hover:bg-brand/10 disabled:opacity-60"><Send size={13} /> Submit</button><button type="button" onClick={() => void requestExecution("hostile")} disabled={pending} className="hidden rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white/65 hover:border-brand/50 hover:text-brand disabled:opacity-60 sm:inline-flex">Try hostile input</button></div>
     </div>
     <div className="h-[390px] bg-[#10161a]">
       <Monaco height="390px" theme="vs-dark" language={language} value={sourceCode} onChange={(value) => changeSourceCode(value ?? "")} onMount={onEditorMount} options={{ minimap: { enabled: false }, readOnly: pending, fontSize: 13, tabSize: 2, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true, wordWrap: "on", lineNumbersMinChars: 3 }} />
@@ -496,7 +531,7 @@ export function CodeEditor() {
           : <p className="mt-2 text-xs text-white/50">Provider returned no output.</p>)}
       </div>
     </div>
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#10161a] px-4 py-2 text-[10px] uppercase tracking-[.12em] text-white/35"><span>{sourceCode.length.toLocaleString()} chars</span><span>{language}</span><span className="text-[#e8bd64]">{language === "python" ? "Runs locally in your browser" : "Provider not configured"}</span></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#10161a] px-4 py-2 text-[10px] uppercase tracking-[.12em] text-white/35"><span>{sourceCode.length.toLocaleString()} chars</span><span>{language}</span><span className="text-[#e8bd64]">{language === "typescript" ? "TypeScript uses the server execution provider" : "Runs locally in your browser"}</span></div>
     </div>
     {timelineError && <p role="status" className="rounded-xl border border-[#725b36] bg-[#292318] px-4 py-3 text-xs text-[#e8d4ad]">{timelineError}</p>}
     <SessionReplay key={sessionId} sessionId={sessionId || "loading"} events={timeline} onStartNewAttempt={startNewAttempt} />

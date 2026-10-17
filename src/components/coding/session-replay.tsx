@@ -8,7 +8,7 @@ import { deriveIntegritySignals } from "@/features/integrity/signals";
 interface SessionReplayProps {
   sessionId: string;
   events: readonly SessionEvent[];
-  onStartNewAttempt: () => void;
+  onStartNewAttempt?: () => void;
   initialTimestamp?: string;
 }
 
@@ -61,7 +61,7 @@ export function SessionReplay({ sessionId, events, onStartNewAttempt, initialTim
         <h2 className="text-lg font-bold text-ink">Session timeline</h2>
         <p className="mt-1 text-xs text-muted">Attempt {sessionId.slice(0, 8)} · {events.length} events</p>
       </div>
-      <button type="button" onClick={onStartNewAttempt} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-bold text-ink hover:bg-[var(--panel-raised)]">New attempt</button>
+      {onStartNewAttempt && <button type="button" onClick={onStartNewAttempt} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-bold text-ink hover:bg-[var(--panel-raised)]">New attempt</button>}
     </div>
 
     <div className="mt-4 rounded-xl bg-[var(--panel-raised)] p-3 text-xs leading-5 text-muted">

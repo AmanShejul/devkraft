@@ -37,7 +37,13 @@ export default async function TeacherPage() {
 
       <AssignmentStudio />
       <IntegrityReviewQueue />
-      <TeacherAnalytics />
+      <section id="student-progress" className="scroll-mt-6 space-y-3">
+        <div>
+          <h2 className="text-xl font-bold text-ink">Student results and analysis</h2>
+          <p className="mt-1 text-sm text-muted">Review submitted scores, question-by-question answers, explanations, and concepts to revisit.</p>
+        </div>
+        <TeacherAnalytics />
+      </section>
     </div>
   </PageLayout>;
 }
