@@ -3,9 +3,10 @@ import {
   generateDraftQuestions,
   getRecommendedDifficulty,
   normalizeResponse,
+  personalizeDraftQuestions,
   selectQuestionsForDifficulty,
   type TeacherAssignment,
-} from "@/features/teacher-portal/demo-data";
+} from "@/features/teacher-portal/question-drafts";
 
 describe("teacher question drafts", () => {
   it("creates editable cloze questions grounded in source sentences", () => {
@@ -56,5 +57,14 @@ describe("teacher question drafts", () => {
     ];
 
     expect(selectQuestionsForDifficulty(questions, "advanced")).toEqual(questions);
+  });
+
+  it("personalizes editable drafts while preserving their answers", () => {
+    const questions = [{ id: "q1", prompt: "Complete the statement: A loop repeats work.", answer: "work", source: "A loop repeats work.", difficulty: "foundation" as const }];
+    expect(personalizeDraftQuestions(questions, "Use a beginner-friendly scenario", "intermediate")).toEqual([{
+      ...questions[0],
+      prompt: "Use a beginner-friendly scenario: Complete the statement: A loop repeats work.",
+      difficulty: "intermediate",
+    }]);
   });
 });

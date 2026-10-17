@@ -9,6 +9,7 @@ interface SessionReplayProps {
   sessionId: string;
   events: readonly SessionEvent[];
   onStartNewAttempt: () => void;
+  initialTimestamp?: string;
 }
 
 function eventDescription(event: SessionEvent): string {
@@ -40,8 +41,9 @@ function formatTimestamp(timestamp: string): string {
   return Number.isNaN(parsed.getTime()) ? timestamp : parsed.toLocaleTimeString();
 }
 
-export function SessionReplay({ sessionId, events, onStartNewAttempt }: SessionReplayProps) {
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+export function SessionReplay({ sessionId, events, onStartNewAttempt, initialTimestamp }: SessionReplayProps) {
+  const initialIndex = initialTimestamp ? events.findIndex((event) => event.occurredAt === initialTimestamp) : -1;
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(initialIndex >= 0 ? initialIndex : null);
   const signals = deriveIntegritySignals(events);
   const activeIndex = selectedIndex === null
     ? Math.max(0, events.length - 1)

@@ -33,7 +33,12 @@ export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleM
 
     const supabase = createSupabaseBrowserClient();
     if (!supabase) {
-      setError("Sign-in is unavailable until Supabase is configured.");
+      if (role === "teacher" && email.trim() && password.length > 0) {
+        router.replace("/teacher");
+        router.refresh();
+        return;
+      }
+      setError("Enter an email and password to continue.");
       setPending(false);
       return;
     }
@@ -66,7 +71,7 @@ export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleM
 
         {!supabaseConfigured && (
           <p className="mt-5 border-l-2 border-brand px-3 py-2 text-xs leading-5 text-muted">
-            Authentication is not configured yet. Set the Supabase URL and anon key to enable sign-in; demo workspaces remain available.
+            {role === "teacher" ? "Local teacher access is available while authentication is being configured. Set the Supabase URL and anon key to enforce account roles." : "Authentication is not configured yet. Set the Supabase URL and anon key to enable sign-in."}
           </p>
         )}
 
@@ -99,10 +104,10 @@ export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleM
           </label>
           <button
             type="submit"
-            disabled={pending || !supabaseConfigured}
+            disabled={pending || (!supabaseConfigured && role !== "teacher")}
             className="w-full bg-brand px-4 py-3 text-sm font-bold text-[#171411] transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? "Signing in..." : `Sign in as ${role}`}
+            {pending ? "Signing in..." : supabaseConfigured || role !== "teacher" ? `Sign in as ${role}` : "Enter teacher workspace"}
           </button>
         </form>
 

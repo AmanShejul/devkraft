@@ -22,3 +22,12 @@ export async function createSupabaseServerClient(learnerId?: string): Promise<Su
     },
   });
 }
+
+/** Server-only elevated client for controlled operations such as authoritative grading.
+ * The key is never sent to the browser. Callers must perform their own actor checks
+ * before using it; it exists because student RLS must not expose answer keys. */
+export function createSupabaseAdminClient(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return url && key ? createServerClient(url, key, { cookies: { getAll: () => [], setAll: () => undefined } }) : null;
+}

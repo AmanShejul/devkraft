@@ -13,6 +13,7 @@ import { prepareVivaForSubmit } from "@/features/viva/viva";
 import { SessionReplay } from "@/components/coding/session-replay";
 import { MagneticButton } from "@/components/ui/magnetic-button";
 import { AnimatedNumber } from "@/components/ui/text-animation";
+import { isStoredArenaSession, readStoredArenaSessions, SESSION_HISTORY_STORAGE_KEY, SESSION_STORAGE_KEY } from "@/features/integrity/session-storage";
 
 const Monaco = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -24,28 +25,6 @@ const starterCode: Record<CodeExecutionRequest["language"], string> = {
   javascript: "function countDown(start) {\n  const values = [];\n\n  // Add each number from start down to 1.\n\n  return values;\n}\n\nconsole.log(countDown(3));",
   python: "def count_down(start):\n    values = []\n\n    # Add each number from start down to 1.\n\n    return values\n\nprint(count_down(3))",
 };
-
-const SESSION_STORAGE_KEY = "skillpath:arena-session";
-
-interface StoredArenaSession {
-  sessionId: string;
-  events: SessionEvent[];
-}
-
-function isStoredArenaSession(value: unknown): value is StoredArenaSession {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as { sessionId?: unknown; events?: unknown };
-  return typeof candidate.sessionId === "string"
-    && Array.isArray(candidate.events)
-    && candidate.events.every((event) => {
-      if (!event || typeof event !== "object") return false;
-      const item = event as Record<string, unknown>;
-      return typeof item.id === "string"
-        && item.sessionId === candidate.sessionId
-        && (item.kind === "edit" || item.kind === "run" || item.kind === "submit" || item.kind === "focus-change")
-        && typeof item.occurredAt === "string";
-    });
-}
 
 function isApiFailure(payload: unknown): payload is Extract<ApiResponse<CodeExecutionResult>, { ok: false }> {
   if (!payload || typeof payload !== "object") return false;
@@ -176,6 +155,9 @@ export function CodeEditor() {
     queueMicrotask(() => {
       try {
         localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ sessionId, events: timeline }));
+        const currentSession = { sessionId, events: timeline };
+        const history = readStoredArenaSessions().filter((session) => session.sessionId !== sessionId);
+        localStorage.setItem(SESSION_HISTORY_STORAGE_KEY, JSON.stringify([currentSession, ...history].slice(0, 25)));
         setTimelineError("");
       } catch {
         setTimelineError("Could not save the session timeline in this browser.");

@@ -1,38 +1,62 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BookOpen, Check, FilePlus2, Send, WandSparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BookOpen, Check, FilePlus2, FileText, LoaderCircle, Send, Upload, WandSparkles, X } from "lucide-react";
 import { SectionCard } from "@/components/ui/section-card";
 import {
-  generateDraftQuestions,
-  readDemoAssignments,
-  readDemoSubmissions,
-  writeDemoAssignment,
+  personalizeDraftQuestions,
   type AssignmentSubmission,
   type DraftQuestion,
   type QuestionDifficulty,
   type TeacherAssignment,
-} from "@/features/teacher-portal/demo-data";
+} from "@/features/teacher-portal/question-drafts";
+import type { ApiResponse } from "@/types/api";
+import type { GeneratedQuestion, TeacherQuizSet, VisualExplanation } from "@/features/teacher-portal/contracts";
 
 const difficultyOptions: QuestionDifficulty[] = ["foundation", "intermediate", "advanced"];
+const textDocumentPattern = /\.(txt|md|markdown|csv|js|jsx|ts|tsx|py|java|c|cc|cpp|cs|go|rs|rb|php|html|css|json|sql)$/i;
+const presentationPattern = /\.pptx$/i;
 
 export function AssignmentStudio() {
   const [assignments, setAssignments] = useState<TeacherAssignment[]>([]);
-  const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
   const [content, setContent] = useState("");
   const [questions, setQuestions] = useState<DraftQuestion[]>([]);
+  const [visualExplanation, setVisualExplanation] = useState<VisualExplanation | null>(null);
   const [message, setMessage] = useState("");
+  const [direction, setDirection] = useState("");
+  const [personalizationDifficulty, setPersonalizationDifficulty] = useState<QuestionDifficulty>("intermediate");
+  const [generationPreference, setGenerationPreference] = useState<"auto" | "ollama">("auto");
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedPdfName, setSelectedPdfName] = useState("");
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
 
   useEffect(() => {
-    const refresh = () => {
-      setAssignments(readDemoAssignments());
-      setSubmissions(readDemoSubmissions());
+    fileInputRef.current?.setAttribute("webkitdirectory", "");
+    const toDraft = (question: GeneratedQuestion): DraftQuestion => ({
+      id: question.id, prompt: question.prompt, answer: question.correctAnswer, source: question.source.excerpt,
+      difficulty: question.difficulty, options: question.options, explanation: question.explanation,
+      sourceDocumentId: question.source.documentId, sourcePage: question.source.page,
+      reviewStatus: question.reviewStatus, generationStatus: question.generationStatus,
+    });
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/teacher/assignments", { cache: "no-store" });
+        const payload = await response.json() as ApiResponse<TeacherQuizSet[]>;
+        if (!response.ok || !payload.ok) throw new Error("server unavailable");
+        setAssignments(payload.data.map((assignment) => ({ id: assignment.id, title: assignment.title, subject: assignment.subject, topic: assignment.topic, content: assignment.instructions, questions: assignment.questions.map(toDraft), status: assignment.status === "published" ? "published" : "draft", createdAt: assignment.createdAt, publishedAt: assignment.publishedAt, visualExplanation: assignment.visualExplanation })));
+      } catch {
+        setAssignments([]);
+        setMessage("Saved assignments are unavailable right now. You can still prepare a draft and try again.");
+      }
     };
-    const initialRefresh = window.setTimeout(refresh, 0);
+    const initialRefresh = window.setTimeout(() => void refresh(), 0);
     window.addEventListener("storage", refresh);
     return () => {
       window.clearTimeout(initialRefresh);
@@ -40,19 +64,107 @@ export function AssignmentStudio() {
     };
   }, []);
 
-  function generateQuestions() {
-    const generated = generateDraftQuestions(content);
-    setQuestions(generated);
-    setMessage(generated.length
-      ? `Created ${generated.length} editable question drafts. Review each answer before publishing.`
-      : "Add a few complete explanatory sentences so question drafts can be created.");
+  function personalizeQuestions() {
+    if (questions.length === 0) {
+      setMessage("Generate question drafts first, then add a direction to personalize them.");
+      return;
+    }
+    setQuestions((current) => personalizeDraftQuestions(current, direction, personalizationDifficulty));
+    setMessage("Questions personalized locally. Review the wording and answer keys before adding the kit to the student portal.");
+  }
+
+  async function processContentFiles(files: File[]) {
+    if (files.length === 0) return;
+    const supportedFiles = files.filter((file) => file.type === "application/pdf"
+      || file.type.startsWith("text/")
+      || /\.pdf$/i.test(file.name)
+      || presentationPattern.test(file.name)
+      || textDocumentPattern.test(file.name));
+    if (supportedFiles.length === 0) {
+      setMessage("Drop a course file or your notes here.");
+      return;
+    }
+    setSelectedFiles(supportedFiles);
+    const firstDocument = supportedFiles.find((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") || presentationPattern.test(file.name) || textDocumentPattern.test(file.name));
+    setSelectedPdfName(firstDocument?.name ?? "");
+    const textFiles = supportedFiles.filter((file) => /text\/(plain|csv|markdown)/.test(file.type) || textDocumentPattern.test(file.name));
+    if (textFiles.length > 0) {
+      const extractedText = await Promise.all(textFiles.map((file) => file.text()));
+      setContent((current) => [current.trim(), ...extractedText].filter(Boolean).join("\n\n"));
+    }
+    setMessage(firstDocument
+      ? `${supportedFiles.length} file${supportedFiles.length === 1 ? "" : "s"} selected. Choose a document below, then generate questions from it.`
+      : `${supportedFiles.length} text file${supportedFiles.length === 1 ? "" : "s"} added to the teaching content.`);
+  }
+
+  async function handleContentFiles(event: React.ChangeEvent<HTMLInputElement>) {
+    await processContentFiles(Array.from(event.target.files ?? []));
+    event.target.value = "";
+  }
+
+  function handleContentDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDraggingFiles(false);
+    void processContentFiles(Array.from(event.dataTransfer.files));
+  }
+
+  function handleContentPaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    const clipboardFiles = Array.from(event.clipboardData.files);
+    if (clipboardFiles.length > 0) {
+      event.preventDefault();
+      void processContentFiles(clipboardFiles);
+      return;
+    }
+    const pastedText = event.clipboardData.getData("text/plain").trim();
+    if (pastedText) {
+      event.preventDefault();
+      setContent((current) => [current.trim(), pastedText].filter(Boolean).join("\n\n"));
+      setMessage("Pasted teaching notes into the content area.");
+    }
+  }
+
+  async function generateQuestionsFromMaterial() {
+    const selectedFile = selectedFiles.find((item) => item.name === selectedPdfName);
+    const file = selectedFile ?? (content.trim() ? new File([content], "pasted-notes.txt", { type: "text/plain" }) : null);
+    if (!file) {
+      setMessage("Add or paste some teaching material first.");
+      return;
+    }
+    setGeneratingPdf(true);
+    setMessage("Preparing question drafts from your material…");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("direction", direction);
+      form.append("subject", subject);
+      form.append("topic", topic);
+      form.append("difficulty", personalizationDifficulty);
+      form.append("generationPreference", generationPreference);
+      form.append("count", "5");
+      const response = await fetch("/api/teacher/questions", { method: "POST", body: form, signal: AbortSignal.timeout(240_000) });
+      const payload = await response.json() as ApiResponse<{ questions: GeneratedQuestion[]; visualExplanation: VisualExplanation | null; sourceFile: string; difficulty: QuestionDifficulty; generationProvider: "gemini" | "ollama" }>;
+      if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Questions could not be created right now." : payload.error.message);
+      setQuestions(payload.data.questions.map((question) => ({ id: question.id, prompt: question.prompt, answer: question.correctAnswer, source: question.source.excerpt, difficulty: question.difficulty, options: question.options, explanation: question.explanation, sourceDocumentId: question.source.documentId, sourcePage: question.source.page, reviewStatus: "draft", generationStatus: question.generationStatus })));
+      setVisualExplanation(payload.data.visualExplanation);
+      setContent((current) => current || `Questions generated from ${payload.data.sourceFile}.`);
+      const providerName = payload.data.generationProvider === "ollama" ? "local Ollama" : "Gemini";
+      setMessage(`Created ${payload.data.questions.length} editable questions from ${payload.data.sourceFile} using ${providerName}. Review them before adding the kit to the student portal.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Questions could not be created from this material.");
+    } finally {
+      setGeneratingPdf(false);
+    }
   }
 
   function updateQuestion(id: string, patch: Partial<DraftQuestion>) {
     setQuestions((current) => current.map((question) => question.id === id ? { ...question, ...patch } : question));
   }
 
-  function saveAssignment(status: "draft" | "published") {
+  function verifyQuestion(id: string) {
+    updateQuestion(id, { generationStatus: "grounded", reviewStatus: "reviewed" });
+  }
+
+  async function saveAssignment(status: "draft" | "published") {
     if (!title.trim() || !subject.trim() || !topic.trim() || questions.length === 0) {
       setMessage("Add a title, subject, topic, and at least one question before saving.");
       return;
@@ -66,14 +178,30 @@ export function AssignmentStudio() {
       topic: topic.trim(),
       content: content.trim(),
       questions,
+      visualExplanation,
       status,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
+      ...(selectedFiles.length > 0 ? { sourceFiles: selectedFiles.map((file) => file.webkitRelativePath || file.name) } : {}),
       ...(status === "published" ? { publishedAt: new Date().toISOString() } : {}),
     };
 
-    setAssignments(writeDemoAssignment(assignment));
-    setAssignmentId(assignment.id);
-    setMessage(status === "published" ? "Assignment published to the student portal." : "Draft saved in this browser.");
+    const payloadQuestions = questions.map((question) => ({
+      id: question.id, type: question.options && question.options.length > 1 ? "mcq" : "short-answer", prompt: question.prompt,
+      ...(question.options && question.options.length > 1 ? { options: question.options } : {}), correctAnswer: question.answer,
+      explanation: question.explanation ?? "Review the supporting source excerpt before using this answer.", subject: subject.trim(), topic: topic.trim(), conceptId: null,
+      difficulty: question.difficulty, source: { documentId: question.sourceDocumentId ?? "manual-content", documentName: selectedFiles[0]?.name ?? "Teacher notes", page: question.sourcePage ?? null, excerpt: question.source },
+      generationStatus: question.generationStatus ?? "needs-review", reviewStatus: status === "published" ? "published" : (question.reviewStatus ?? "draft"),
+    }));
+    try {
+      const response = await fetch("/api/teacher/assignments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: assignment.id, title: assignment.title, subject: assignment.subject, topic: assignment.topic, instructions: assignment.content, status, visualExplanation, questions: payloadQuestions }) });
+      const payload = await response.json() as ApiResponse<TeacherQuizSet>;
+      if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Assignment could not be saved." : payload.error.message);
+      setAssignmentId(payload.data.id);
+      setAssignments((current) => [{ ...assignment, id: payload.data.id, status }, ...current.filter((item) => item.id !== payload.data.id)]);
+      setMessage(status === "published" ? "Assignment published to the student portal." : "Draft saved to the server.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Assignment could not be saved.");
+    }
   }
 
   function editDraft(assignment: TeacherAssignment) {
@@ -83,22 +211,59 @@ export function AssignmentStudio() {
     setTopic(assignment.topic);
     setContent(assignment.content);
     setQuestions(assignment.questions);
+    setVisualExplanation(assignment.visualExplanation ?? null);
     setMessage("Draft loaded for editing.");
   }
 
   const published = assignments.filter((assignment) => assignment.status === "published");
-  const recentSubmissions = submissions.slice(0, 8);
+  const recentSubmissions: AssignmentSubmission[] = [];
 
   return (
     <div className="space-y-5">
-      <SectionCard>
-        <div className="flex items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center bg-brand-soft text-brand"><FilePlus2 size={18} /></span>
+      <SectionCard className="overflow-hidden border-white/10 bg-[linear-gradient(145deg,rgba(31,36,41,.94),rgba(14,17,20,.98))]">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+          <div className="flex items-start gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-brand-soft text-brand shadow-[0_0_30px_rgba(232,185,106,.1)]"><FilePlus2 size={18} /></span>
           <div>
-            <h2 className="text-lg font-bold text-ink">Create a student assignment</h2>
+            <p className="text-[10px] font-bold uppercase tracking-[.16em] text-brand">Assignment studio</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-.03em] text-ink">Create a student assignment</h2>
             <p className="mt-1 text-xs leading-5 text-muted">Add teaching content, create editable question drafts, then publish when they are ready.</p>
           </div>
+          </div>
+          <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em] text-white/45">Teacher review required</span>
         </div>
+
+        <input ref={fileInputRef} type="file" multiple accept=".pdf,.pptx,.txt,.md,.markdown,.csv,.js,.jsx,.ts,.tsx,.py,.java,.c,.cc,.cpp,.cs,.go,.rs,.rb,.php,.html,.css,.json,.sql" className="sr-only" onChange={(event) => void handleContentFiles(event)} />
+        <div className="mt-6 grid gap-2 border-y border-white/10 py-4 sm:grid-cols-3">
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand/35 bg-brand/[.06] px-3 py-3 text-xs font-bold text-brand transition hover:border-brand hover:bg-brand/[.12]"><Upload size={15} /> Add content</button>
+          <button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf || (!content.trim() && !selectedPdfName)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.02] px-3 py-3 text-xs font-bold text-white/75 transition hover:border-brand/40 hover:bg-white/[.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"><WandSparkles size={15} /> {generatingPdf ? "Creating questions" : selectedPdfName ? "Generate from file" : "Generate the Qs"}</button>
+          <button type="button" onClick={personalizeQuestions} disabled={questions.length === 0} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.02] px-3 py-3 text-xs font-bold text-white/75 transition hover:border-brand/40 hover:bg-white/[.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"><WandSparkles size={15} /> Personalize the Qs</button>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Upload teaching files by dropping them here or opening the file picker"
+          onClick={() => fileInputRef.current?.click()}
+          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") fileInputRef.current?.click(); }}
+          onDragEnter={(event) => { event.preventDefault(); setIsDraggingFiles(true); }}
+          onDragOver={(event) => { event.preventDefault(); setIsDraggingFiles(true); }}
+          onDragLeave={(event) => { if (event.currentTarget === event.target) setIsDraggingFiles(false); }}
+          onDrop={handleContentDrop}
+          onPaste={handleContentPaste}
+          className={`mt-4 cursor-pointer rounded-xl border border-dashed px-4 py-5 text-center transition focus:outline-none focus:ring-2 focus:ring-brand/60 ${isDraggingFiles ? "border-brand bg-brand/[.12]" : "border-white/15 bg-white/[.02] hover:border-brand/50"}`}
+        >
+          <Upload size={18} className={`mx-auto ${isDraggingFiles ? "text-brand" : "text-white/40"}`} />
+          <p className="mt-2 text-xs font-semibold text-white/75">Drag and drop files here</p>
+          <p className="mt-1 text-[11px] text-muted">or click / paste to add course files and notes</p>
+        </div>
+
+        {selectedFiles.length > 0 && <div className="mt-4 rounded-xl border border-brand/20 bg-brand/[.05] p-4">
+          <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-brand">Selected content</p><p className="mt-1 text-[11px] text-muted">Folder picker results · {selectedFiles.length} file{selectedFiles.length === 1 ? "" : "s"}</p></div><button type="button" aria-label="Clear selected content" onClick={() => { setSelectedFiles([]); setSelectedPdfName(""); }} className="text-white/40 hover:text-white"><X size={15} /></button></div>
+          <div className="mt-3 space-y-2">{selectedFiles.map((file) => { const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"); const isPresentation = presentationPattern.test(file.name); const isTextDocument = textDocumentPattern.test(file.name) || file.type.startsWith("text/"); return <button key={`${file.name}-${file.size}`} type="button" onClick={() => (isPdf || isPresentation || isTextDocument) && setSelectedPdfName(file.name)} className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${selectedPdfName === file.name ? "border-brand bg-brand-soft text-ink" : "border-white/10 text-white/60"}`}><FileText size={14} className={isPdf || isPresentation || isTextDocument ? "text-brand" : "text-white/35"} /><span className="min-w-0 flex-1 truncate">{file.webkitRelativePath || file.name}</span><span className="text-[10px] text-white/35">{Math.ceil(file.size / 1024)} KB</span></button>; })}</div>
+          {selectedPdfName && <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-white/10 pt-3"><span className="text-xs text-muted">Document selected: <strong className="text-ink">{selectedPdfName}</strong></span><button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf} className="inline-flex items-center gap-2 rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] disabled:opacity-60">{generatingPdf ? <LoaderCircle size={14} className="animate-spin" /> : <WandSparkles size={14} />} Generate questions from this file</button></div>}
+          <p className="mt-3 text-[11px] leading-5 text-muted">Your material stays in the lesson workflow. You can also paste notes directly or use the file picker.</p>
+        </div>}
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <label className="text-xs font-semibold text-white/75">Assignment title
@@ -111,12 +276,27 @@ export function AssignmentStudio() {
             <input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. Relational model" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
           </label>
           <label className="text-xs font-semibold text-white/75 sm:col-span-2">Teaching content
-            <textarea value={content} onChange={(event) => setContent(event.target.value)} rows={6} placeholder="Paste notes or explanations here. Draft questions are created from complete sentences in this text." className="mt-2 w-full resize-y border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm leading-6 text-ink outline-none focus:border-brand" />
+            <textarea ref={contentRef} value={content} onChange={(event) => setContent(event.target.value)} rows={6} placeholder="Paste notes or explanations here. Draft questions are created from complete sentences in this text." className="mt-2 w-full resize-y border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm leading-6 text-ink outline-none focus:border-brand" />
+          </label>
+          <label className="text-xs font-semibold text-white/75 sm:col-span-2">Personalization direction <span className="font-normal text-white/40">(optional)</span>
+            <input value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="e.g. Use beginner-friendly real-world scenarios" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
+          </label>
+          <label className="text-xs font-semibold text-white/75 sm:col-span-2">Question generation model
+            <select value={generationPreference} onChange={(event) => setGenerationPreference(event.target.value as "auto" | "ollama")} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
+              <option value="auto">Automatic: Gemini with local fallback</option>
+              <option value="ollama">Local Ollama</option>
+            </select>
+            <span className="mt-1 block font-normal leading-5 text-muted">Choose local Ollama if you want to bypass Gemini for this generation.</span>
+          </label>
+          <label className="text-xs font-semibold text-white/75">Target level
+            <select value={personalizationDifficulty} onChange={(event) => setPersonalizationDifficulty(event.target.value as QuestionDifficulty)} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
+              {difficultyOptions.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty}</option>)}
+            </select>
           </label>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={generateQuestions} disabled={!content.trim()} className="inline-flex items-center gap-2 bg-brand px-4 py-3 text-sm font-bold text-[#171411] transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"><WandSparkles size={16} /> Generate question drafts</button>
+          <button type="button" onClick={() => contentRef.current?.focus()} className="inline-flex items-center gap-2 text-xs font-semibold text-muted hover:text-brand"><FilePlus2 size={14} /> Or paste notes manually</button>
           {questions.length > 0 && <span className="text-xs text-muted">{questions.length} drafts ready to review</span>}
         </div>
 
@@ -137,18 +317,25 @@ export function AssignmentStudio() {
                 <label className="mt-3 block text-xs font-semibold text-white/75">Expected answer
                   <input value={question.answer} onChange={(event) => updateQuestion(question.id, { answer: event.target.value })} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
                 </label>
+                {question.options && <label className="mt-3 block text-xs font-semibold text-white/75">Answer choices <span className="font-normal text-white/40">(one per line)</span>
+                  <textarea value={question.options.join("\n")} onChange={(event) => updateQuestion(question.id, { options: event.target.value.split(/\r?\n/).map((option) => option.trim()).filter(Boolean) })} rows={4} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm leading-5 text-ink outline-none focus:border-brand" />
+                </label>}
                 <p className="mt-3 border-l-2 border-brand/50 pl-3 text-xs leading-5 text-muted"><strong className="text-white/70">Source:</strong> {question.source}</p>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
+                  <span className={`text-[10px] font-bold uppercase tracking-[.1em] ${question.generationStatus === "needs-review" ? "text-amber-300" : "text-emerald-300"}`}>{question.generationStatus === "needs-review" ? "Needs a quick check" : question.reviewStatus === "reviewed" ? "Ready to publish" : "Draft question"}</span>
+                  {question.reviewStatus !== "reviewed" && <button type="button" onClick={() => verifyQuestion(question.id)} className="border border-brand/40 px-2.5 py-1.5 text-[11px] font-semibold text-brand hover:bg-brand/10">Mark as checked</button>}
+                </div>
               </div>
             ))}
             <div className="flex flex-wrap gap-3">
               <button type="button" onClick={() => saveAssignment("draft")} className="inline-flex items-center gap-2 border border-[var(--line)] px-4 py-3 text-sm font-semibold text-ink hover:border-brand"><Check size={15} /> Save draft</button>
-              <button type="button" onClick={() => saveAssignment("published")} className="inline-flex items-center gap-2 bg-brand px-4 py-3 text-sm font-bold text-[#171411] hover:bg-brand-dark"><Send size={15} /> Publish to students</button>
+              <button type="button" onClick={() => saveAssignment("published")} className="inline-flex items-center gap-2 bg-brand px-4 py-3 text-sm font-bold text-[#171411] hover:bg-brand-dark"><Send size={15} /> Add kit to student portal</button>
             </div>
           </div>
         )}
 
         {message && <p role="status" className="mt-4 text-xs leading-5 text-muted">{message}</p>}
-        <p className="mt-5 border-t border-[var(--line)] pt-4 text-[11px] leading-5 text-muted">Demo storage: assignments and submissions are saved only in this browser. Configure shared database storage before using this with a class.</p>
+        <p className="mt-5 border-t border-[var(--line)] pt-4 text-[11px] leading-5 text-muted">Saved assignments are loaded from the connected workspace. Nothing is shown until it has been saved.</p>
       </SectionCard>
 
       <SectionCard>
@@ -165,7 +352,7 @@ export function AssignmentStudio() {
       </SectionCard>
 
       <SectionCard>
-        <div><h2 className="text-lg font-bold text-ink">Student submissions</h2><p className="mt-1 text-xs text-muted">Recent results from assignments completed in this browser.</p></div>
+        <div><h2 className="text-lg font-bold text-ink">Student submissions</h2><p className="mt-1 text-xs text-muted">Results will appear after students submit published assignments.</p></div>
         {recentSubmissions.length === 0 ? <p className="mt-5 border-t border-[var(--line)] pt-4 text-sm text-muted">No student submissions yet.</p> : (
           <div className="mt-4 divide-y divide-[var(--line)]">
             {recentSubmissions.map((submission) => {

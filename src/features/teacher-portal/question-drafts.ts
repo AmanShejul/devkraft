@@ -1,3 +1,5 @@
+import type { VisualExplanation } from "./contracts";
+
 export type QuestionDifficulty = "foundation" | "intermediate" | "advanced";
 export type AssignmentStatus = "draft" | "published";
 
@@ -7,6 +9,12 @@ export type DraftQuestion = {
   answer: string;
   source: string;
   difficulty: QuestionDifficulty;
+  options?: string[];
+  explanation?: string;
+  sourceDocumentId?: string;
+  sourcePage?: number | null;
+  reviewStatus?: "draft" | "reviewed" | "published";
+  generationStatus?: "grounded" | "needs-review";
 };
 
 export type TeacherAssignment = {
@@ -19,6 +27,8 @@ export type TeacherAssignment = {
   status: AssignmentStatus;
   createdAt: string;
   publishedAt?: string;
+  sourceFiles?: string[];
+  visualExplanation?: VisualExplanation | null;
 };
 
 export type SubmissionResult = {
@@ -37,44 +47,11 @@ export type AssignmentSubmission = {
 
 export const QUESTION_DIFFICULTIES: QuestionDifficulty[] = ["foundation", "intermediate", "advanced"];
 
-const ASSIGNMENTS_KEY = "skillpath:demo:teacher-assignments";
-const SUBMISSIONS_KEY = "skillpath:demo:assignment-submissions";
 const ignoredTerms = new Set([
   "about", "after", "also", "because", "between", "could", "does", "first", "from", "have", "into",
   "information", "more", "most", "organize", "organizes", "other", "related", "should", "some", "than", "that", "their", "there", "these", "they", "this",
   "through", "under", "using", "which", "while", "where", "when", "will", "with", "would",
 ]);
-
-function readList<T>(key: string): T[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(key) ?? "[]");
-    return Array.isArray(value) ? value as T[] : [];
-  } catch {
-    return [];
-  }
-}
-
-export function readDemoAssignments(): TeacherAssignment[] {
-  return readList<TeacherAssignment>(ASSIGNMENTS_KEY);
-}
-
-export function writeDemoAssignment(assignment: TeacherAssignment): TeacherAssignment[] {
-  const assignments = readDemoAssignments().filter((item) => item.id !== assignment.id);
-  assignments.unshift(assignment);
-  window.localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
-  return assignments;
-}
-
-export function readDemoSubmissions(): AssignmentSubmission[] {
-  return readList<AssignmentSubmission>(SUBMISSIONS_KEY);
-}
-
-export function writeDemoSubmission(submission: AssignmentSubmission): AssignmentSubmission[] {
-  const submissions = [submission, ...readDemoSubmissions()];
-  window.localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(submissions));
-  return submissions;
-}
 
 export function generateDraftQuestions(content: string): DraftQuestion[] {
   const sentences = content
@@ -99,6 +76,22 @@ export function generateDraftQuestions(content: string): DraftQuestion[] {
       difficulty: "foundation" as const,
     }];
   }).slice(0, 8);
+}
+
+/** Applies a teacher's simple, local direction to editable drafts without changing their answer keys. */
+export function personalizeDraftQuestions(
+  questions: DraftQuestion[],
+  direction: string,
+  difficulty: QuestionDifficulty,
+): DraftQuestion[] {
+  const trimmedDirection = direction.trim();
+  return questions.map((question) => ({
+    ...question,
+    difficulty,
+    prompt: trimmedDirection
+      ? `${trimmedDirection}: ${question.prompt.replace(/^\[[^\]]+\]:\s*/, "")}`
+      : question.prompt,
+  }));
 }
 
 export function normalizeResponse(response: string): string {

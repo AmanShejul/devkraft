@@ -3,7 +3,7 @@ import { getUnmetPrerequisites, isConceptEligible } from "@/features/adaptive-le
 import { updateMastery } from "@/features/adaptive-learning/bkt";
 import { selectNextMission } from "@/features/adaptive-learning/missions";
 import { LEARNING_CONFIG } from "@/config/learning";
-import { DEMO_MISSIONS } from "@/data/demo-learning";
+import { LEARNING_MISSIONS } from "@/data/learning";
 import { scoreAssessment } from "@/features/assessments";
 
 describe("concept prerequisites", () => {
@@ -50,9 +50,9 @@ describe("BKT mastery updates", () => {
 describe("mission selector", () => {
   it("chooses a mission for an eligible weak concept and follows unmet prerequisites", () => {
     const mastery = { variables: 0.9, conditionals: 0.75, loops: 0.3, arrays: 0.54, functions: 0.8, "array-iteration": 0.1 };
-    expect(selectNextMission(DEMO_MISSIONS, mastery)?.mission.id).toBe("loop-count");
-    expect(selectNextMission(DEMO_MISSIONS, { ...mastery, loops: 0.75, functions: 0.8 })?.mission.id).toBe("array-basics");
-    expect(selectNextMission(DEMO_MISSIONS, { variables: 0.2 })?.mission.conceptId).toBe("variables");
+    expect(selectNextMission(LEARNING_MISSIONS, mastery)?.mission.id).toBe("loop-count");
+    expect(selectNextMission(LEARNING_MISSIONS, { ...mastery, loops: 0.75, functions: 0.8 })?.mission.id).toBe("array-basics");
+    expect(selectNextMission(LEARNING_MISSIONS, { variables: 0.2 })?.mission.conceptId).toBe("variables");
   });
 
   it("returns null when there are no missions", () => {
