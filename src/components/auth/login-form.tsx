@@ -34,20 +34,20 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
     setError("");
     setPending(true);
 
-    if (role === "student" && demoMode) {
+    if (demoMode) {
       try {
-        const response = await fetch("/api/student/demo-login", {
+        const response = await fetch(role === "student" ? "/api/student/demo-login" : "/api/teacher/demo-login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
         const payload = await response.json() as ApiResponse<{ demoMode: true }>;
-        if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Student demo access could not be created." : payload.error.message);
+        if (!response.ok || !payload.ok) throw new Error(payload.ok ? `${role} demo access could not be created.` : payload.error.message);
         setPassword("");
-        router.replace(workspacePaths.student);
+        router.replace(workspacePaths[role]);
         router.refresh();
       } catch (submitError) {
-        setError(submitError instanceof Error ? submitError.message : "Student demo access could not be created.");
+        setError(submitError instanceof Error ? submitError.message : `${role} demo access could not be created.`);
         setPending(false);
       }
       return;
@@ -55,20 +55,6 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
 
     const supabase = createSupabaseBrowserClient();
     if (!supabase) {
-      if (role === "teacher" && email.trim() && password.length > 0) {
-        try {
-          const response = await fetch("/api/teacher/demo-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
-          const payload = await response.json() as ApiResponse<{ email: string; demoMode: true }>;
-          if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Teacher demo access could not be created." : payload.error.message);
-          setPassword("");
-          router.replace("/teacher");
-          router.refresh();
-        } catch (submitError) {
-          setError(submitError instanceof Error ? submitError.message : "Teacher demo access could not be created.");
-          setPending(false);
-        }
-        return;
-      }
       setError("Enter an email and password to continue.");
       setPending(false);
       return;
@@ -98,9 +84,9 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
       <div className="mt-8 border border-[var(--line)] bg-[var(--panel)] p-6 sm:p-8">
         <p className="text-[11px] font-bold uppercase tracking-[.16em] text-brand">{role} workspace</p>
         <h1 className="mt-3 text-3xl font-bold text-ink">Sign in</h1>
-        <p className="mt-2 text-sm leading-6 text-muted">Use the {role} account assigned to you.</p>
+        <p className="mt-2 text-sm leading-6 text-muted">{demoMode ? "Enter any email or name and password to continue." : `Use the ${role} account assigned to you.`}</p>
 
-        {role === "student" && demoMode ? <div className="mt-5 border border-brand/25 bg-brand/[.05] px-3 py-3">
+        {demoMode ? <div className="mt-5 border border-brand/25 bg-brand/[.05] px-3 py-3">
           <p className="text-[10px] font-bold uppercase tracking-[.13em] text-brand">Demo access</p>
           <p className="mt-1 text-xs leading-5 text-muted">Enter any email or name and any password to continue. No registration is required and passwords are not stored.</p>
         </div> : !supabaseConfigured && (
@@ -113,9 +99,9 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <label className="block text-xs font-semibold text-white/75">
-            {role === "student" && demoMode ? "Email or name" : "Email"}
+            {demoMode ? "Email or name" : "Email"}
             <input
-              type={role === "student" && demoMode ? "text" : "email"}
+              type={demoMode ? "text" : "email"}
               name="email"
               autoComplete="username"
               required

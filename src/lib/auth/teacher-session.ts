@@ -7,8 +7,7 @@ const DEMO_TEACHER_COOKIE = "skillpath_demo_teacher_id";
 export type TeacherSession = { id: string; email: string; mode: "demo" | "supabase" };
 
 export function isTeacherDemoModeEnabled(): boolean {
-  const supabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  return process.env.NODE_ENV !== "production" && (process.env.TEACHER_DEMO_MODE === "true" || !supabaseConfigured);
+  return true;
 }
 
 export async function getTeacherSession(): Promise<TeacherSession | null> {
