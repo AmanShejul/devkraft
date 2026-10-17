@@ -12,10 +12,16 @@ describe("teacher question API safety", () => {
     const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       expect(url).toBe("http://ollama.test/api/generate");
-      const requestBody = JSON.parse(String(init?.body)) as { prompt: string; format: { properties: { questions: { minItems: number; maxItems: number } } } };
+      const requestBody = JSON.parse(String(init?.body)) as {
+        prompt: string;
+        format: { properties: { questions: { minItems: number; maxItems: number } } };
+        options: { num_predict: number; num_ctx: number };
+      };
       expect(requestBody.prompt).toContain("A relational database organizes records into tables");
+      expect(requestBody.prompt.length).toBeLessThan(6_000);
       expect(requestBody.format.properties.questions.minItems).toBe(5);
       expect(requestBody.format.properties.questions.maxItems).toBe(5);
+      expect(requestBody.options).toEqual({ temperature: 0.2, num_predict: 1_150, num_ctx: 8_192 });
       const sourceChunkId = requestBody.prompt.match(/\[([^\s]+) \| page/)?.[1] ?? "missing";
       const options = ["tables", "primary keys", "records", "relational database", "queries"];
       return Response.json({ response: JSON.stringify({
@@ -255,6 +261,6 @@ describe("teacher question API safety", () => {
     expect(response.status).toBe(422);
     expect(payload.error.code).toBe("INVALID_GENERATED_RESPONSE");
     expect(payload.error.message).toMatch(/did not match the required question format/);
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenCalledOnce();
   });
 });
