@@ -4,6 +4,7 @@ import path from "node:path";
 import { cookies } from "next/headers";
 import type { ConceptMastery } from "@/types/domain";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isDemoStudentIdentity } from "@/lib/auth/student-session";
 
 const LEARNER_COOKIE = "skillpath_learner_id";
 const LEARNER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -23,12 +24,22 @@ function isConceptMasteryArray(value: unknown): value is ConceptMastery[] {
 }
 
 export async function getCurrentLearnerId(): Promise<string | null> {
+  const supabase = await createSupabaseServerClient();
+  if (supabase && process.env.STUDENT_DEMO_MODE !== "true") {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.app_metadata?.roles && Array.isArray(user.app_metadata.roles) && user.app_metadata.roles.includes("student")) return user.id;
+  }
   const cookieStore = await cookies();
   const learnerId = cookieStore.get(LEARNER_COOKIE)?.value;
   return learnerId && LEARNER_ID_PATTERN.test(learnerId) ? learnerId : null;
 }
 
 export async function getOrCreateLearnerId(): Promise<string> {
+  const supabase = await createSupabaseServerClient();
+  if (supabase && process.env.STUDENT_DEMO_MODE !== "true") {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.app_metadata?.roles && Array.isArray(user.app_metadata.roles) && user.app_metadata.roles.includes("student")) return user.id;
+  }
   const cookieStore = await cookies();
   const existingId = cookieStore.get(LEARNER_COOKIE)?.value;
   if (existingId && LEARNER_ID_PATTERN.test(existingId)) return existingId;
@@ -69,7 +80,8 @@ async function readFileMastery(learnerId: string): Promise<ConceptMastery[] | nu
 }
 
 export async function getLearnerMastery(learnerId: string): Promise<ConceptMastery[] | null> {
-  const supabase = await createSupabaseServerClient(learnerId);
+  const demoIdentity = await isDemoStudentIdentity(learnerId);
+  const supabase = demoIdentity ? null : await createSupabaseServerClient(learnerId);
   if (!supabase) return readFileMastery(learnerId);
 
   const { data, error } = await supabase
@@ -85,7 +97,8 @@ export async function getLearnerMastery(learnerId: string): Promise<ConceptMaste
 
 export async function saveLearnerMastery(learnerId: string, mastery: readonly ConceptMastery[]): Promise<void> {
   if (!isConceptMasteryArray(mastery)) throw new TypeError("Invalid learner mastery data.");
-  const supabase = await createSupabaseServerClient(learnerId);
+  const demoIdentity = await isDemoStudentIdentity(learnerId);
+  const supabase = demoIdentity ? null : await createSupabaseServerClient(learnerId);
   if (supabase) {
     const { error } = await supabase
       .from("learner_mastery")

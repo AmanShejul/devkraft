@@ -7,6 +7,7 @@ import {
   personalizeDraftQuestions,
   type AssignmentSubmission,
   type DraftQuestion,
+  type LearningStage,
   type QuestionDifficulty,
   type TeacherAssignment,
 } from "@/features/teacher-portal/question-drafts";
@@ -21,8 +22,10 @@ export function AssignmentStudio() {
   const [assignments, setAssignments] = useState<TeacherAssignment[]>([]);
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
+  const [topicId, setTopicId] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
+  const [learningStage, setLearningStage] = useState<LearningStage>("diagnostic");
   const [content, setContent] = useState("");
   const [questions, setQuestions] = useState<DraftQuestion[]>([]);
   const [visualExplanation, setVisualExplanation] = useState<VisualExplanation | null>(null);
@@ -35,13 +38,14 @@ export function AssignmentStudio() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedPdfName, setSelectedPdfName] = useState("");
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [generationFailed, setGenerationFailed] = useState(false);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
 
   useEffect(() => {
     fileInputRef.current?.setAttribute("webkitdirectory", "");
     const toDraft = (question: GeneratedQuestion): DraftQuestion => ({
       id: question.id, prompt: question.prompt, answer: question.correctAnswer, source: question.source.excerpt,
-      difficulty: question.difficulty, options: question.options, explanation: question.explanation,
+      difficulty: question.difficulty, conceptId: question.conceptId, options: question.options, explanation: question.explanation,
       sourceDocumentId: question.source.documentId, sourcePage: question.source.page,
       reviewStatus: question.reviewStatus, generationStatus: question.generationStatus,
     });
@@ -50,7 +54,7 @@ export function AssignmentStudio() {
         const response = await fetch("/api/teacher/assignments", { cache: "no-store" });
         const payload = await response.json() as ApiResponse<TeacherQuizSet[]>;
         if (!response.ok || !payload.ok) throw new Error("server unavailable");
-        setAssignments(payload.data.map((assignment) => ({ id: assignment.id, title: assignment.title, subject: assignment.subject, topic: assignment.topic, content: assignment.instructions, questions: assignment.questions.map(toDraft), status: assignment.status === "published" ? "published" : "draft", createdAt: assignment.createdAt, publishedAt: assignment.publishedAt, visualExplanation: assignment.visualExplanation })));
+        setAssignments(payload.data.map((assignment) => ({ id: assignment.id, topicId: assignment.topicId, title: assignment.title, subject: assignment.subject, topic: assignment.topic, content: assignment.instructions, questions: assignment.questions.map(toDraft), status: assignment.status === "published" ? "published" : "draft", learningStage: assignment.learningStage, createdAt: assignment.createdAt, publishedAt: assignment.publishedAt, visualExplanation: assignment.visualExplanation })));
       } catch {
         setAssignments([]);
         setMessage("Saved assignments are unavailable right now. You can still prepare a draft and try again.");
@@ -131,6 +135,7 @@ export function AssignmentStudio() {
       return;
     }
     setGeneratingPdf(true);
+    setGenerationFailed(false);
     setMessage("Preparing question drafts from your material…");
     try {
       const form = new FormData();
@@ -140,16 +145,21 @@ export function AssignmentStudio() {
       form.append("topic", topic);
       form.append("difficulty", personalizationDifficulty);
       form.append("generationPreference", generationPreference);
-      form.append("count", "5");
+      form.append("learningStage", learningStage);
+      form.append("count", learningStage === "diagnostic" ? "5" : "7");
       const response = await fetch("/api/teacher/questions", { method: "POST", body: form, signal: AbortSignal.timeout(240_000) });
-      const payload = await response.json() as ApiResponse<{ questions: GeneratedQuestion[]; visualExplanation: VisualExplanation | null; sourceFile: string; difficulty: QuestionDifficulty; generationProvider: "gemini" | "ollama" }>;
+      const payload = await response.json() as ApiResponse<{ questions: GeneratedQuestion[]; requestedCount: number; visualExplanation: VisualExplanation | null; sourceFile: string; difficulty: QuestionDifficulty; generationProvider: "gemini" | "ollama" }>;
       if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Questions could not be created right now." : payload.error.message);
       setQuestions(payload.data.questions.map((question) => ({ id: question.id, prompt: question.prompt, answer: question.correctAnswer, source: question.source.excerpt, difficulty: question.difficulty, options: question.options, explanation: question.explanation, sourceDocumentId: question.source.documentId, sourcePage: question.source.page, reviewStatus: "draft", generationStatus: question.generationStatus })));
       setVisualExplanation(payload.data.visualExplanation);
       setContent((current) => current || `Questions generated from ${payload.data.sourceFile}.`);
       const providerName = payload.data.generationProvider === "ollama" ? "local Ollama" : "Gemini";
-      setMessage(`Created ${payload.data.questions.length} editable questions from ${payload.data.sourceFile} using ${providerName}. Review them before adding the kit to the student portal.`);
+      setGenerationFailed(false);
+      const questionCount = payload.data.questions.length;
+      const questionCountLabel = questionCount < payload.data.requestedCount ? `${questionCount} of ${payload.data.requestedCount} requested` : `${questionCount}`;
+      setMessage(`Created ${questionCountLabel} editable questions from ${payload.data.sourceFile} using ${providerName}. Review them before adding the kit to the student portal.`);
     } catch (error) {
+      setGenerationFailed(true);
       setMessage(error instanceof Error ? error.message : "Questions could not be created from this material.");
     } finally {
       setGeneratingPdf(false);
@@ -169,10 +179,18 @@ export function AssignmentStudio() {
       setMessage("Add a title, subject, topic, and at least one question before saving.");
       return;
     }
+    if (status === "published" && (learningStage === "diagnostic" ? questions.length < 4 || questions.length > 5 : questions.length < 6 || questions.length > 7)) {
+      setMessage(learningStage === "diagnostic" ? "A published diagnostic needs 4 to 5 questions. Generate or prepare more questions before publishing." : "A published follow-up set needs 6 to 7 questions. Generate or prepare more questions before publishing.");
+      return;
+    }
 
     const existing = assignments.find((assignment) => assignment.id === assignmentId);
+    const existingTopic = assignments.find((item) => item.subject.trim().toLowerCase() === subject.trim().toLowerCase()
+      && item.topic.trim().toLowerCase() === topic.trim().toLowerCase());
+    const resolvedTopicId = topicId ?? existingTopic?.topicId ?? crypto.randomUUID();
     const assignment: TeacherAssignment = {
       id: assignmentId ?? crypto.randomUUID(),
+      topicId: resolvedTopicId,
       title: title.trim(),
       subject: subject.trim(),
       topic: topic.trim(),
@@ -180,6 +198,7 @@ export function AssignmentStudio() {
       questions,
       visualExplanation,
       status,
+      learningStage,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       ...(selectedFiles.length > 0 ? { sourceFiles: selectedFiles.map((file) => file.webkitRelativePath || file.name) } : {}),
       ...(status === "published" ? { publishedAt: new Date().toISOString() } : {}),
@@ -188,16 +207,17 @@ export function AssignmentStudio() {
     const payloadQuestions = questions.map((question) => ({
       id: question.id, type: question.options && question.options.length > 1 ? "mcq" : "short-answer", prompt: question.prompt,
       ...(question.options && question.options.length > 1 ? { options: question.options } : {}), correctAnswer: question.answer,
-      explanation: question.explanation ?? "Review the supporting source excerpt before using this answer.", subject: subject.trim(), topic: topic.trim(), conceptId: null,
+      explanation: question.explanation ?? "Review the supporting source excerpt before using this answer.", subject: subject.trim(), topic: topic.trim(), conceptId: question.conceptId ?? null,
       difficulty: question.difficulty, source: { documentId: question.sourceDocumentId ?? "manual-content", documentName: selectedFiles[0]?.name ?? "Teacher notes", page: question.sourcePage ?? null, excerpt: question.source },
       generationStatus: question.generationStatus ?? "needs-review", reviewStatus: status === "published" ? "published" : (question.reviewStatus ?? "draft"),
     }));
     try {
-      const response = await fetch("/api/teacher/assignments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: assignment.id, title: assignment.title, subject: assignment.subject, topic: assignment.topic, instructions: assignment.content, status, visualExplanation, questions: payloadQuestions }) });
+      const response = await fetch("/api/teacher/assignments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: assignment.id, topicId: assignment.topicId, title: assignment.title, subject: assignment.subject, topic: assignment.topic, instructions: assignment.content, learningStage, status, visualExplanation, questions: payloadQuestions }) });
       const payload = await response.json() as ApiResponse<TeacherQuizSet>;
       if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Assignment could not be saved." : payload.error.message);
       setAssignmentId(payload.data.id);
-      setAssignments((current) => [{ ...assignment, id: payload.data.id, status }, ...current.filter((item) => item.id !== payload.data.id)]);
+      setTopicId(payload.data.topicId);
+      setAssignments((current) => [{ ...assignment, id: payload.data.id, topicId: payload.data.topicId, learningStage, status }, ...current.filter((item) => item.id !== payload.data.id)]);
       setMessage(status === "published" ? "Assignment published to the student portal." : "Draft saved to the server.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Assignment could not be saved.");
@@ -206,13 +226,25 @@ export function AssignmentStudio() {
 
   function editDraft(assignment: TeacherAssignment) {
     setAssignmentId(assignment.id);
+    setTopicId(assignment.topicId);
     setTitle(assignment.title);
     setSubject(assignment.subject);
     setTopic(assignment.topic);
+    setLearningStage(assignment.learningStage ?? "diagnostic");
     setContent(assignment.content);
     setQuestions(assignment.questions);
     setVisualExplanation(assignment.visualExplanation ?? null);
     setMessage("Draft loaded for editing.");
+  }
+
+  function createFollowUpStage() {
+    if (!topicId) return;
+    setAssignmentId(null);
+    setTitle("");
+    setQuestions([]);
+    setVisualExplanation(null);
+    setLearningStage("practice");
+    setMessage("Create follow-up questions for this same topic. The topic ID is retained.");
   }
 
   const published = assignments.filter((assignment) => assignment.status === "published");
@@ -275,6 +307,12 @@ export function AssignmentStudio() {
           <label className="text-xs font-semibold text-white/75 sm:col-span-2">Topic
             <input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. Relational model" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
           </label>
+          <label className="text-xs font-semibold text-white/75">Learning stage
+            <select value={learningStage} onChange={(event) => setLearningStage(event.target.value as LearningStage)} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
+              <option value="diagnostic">Diagnostic · 5 questions</option>
+              <option value="practice">Follow-up practice · 7 questions</option>
+            </select>
+          </label>
           <label className="text-xs font-semibold text-white/75 sm:col-span-2">Teaching content
             <textarea ref={contentRef} value={content} onChange={(event) => setContent(event.target.value)} rows={6} placeholder="Paste notes or explanations here. Draft questions are created from complete sentences in this text." className="mt-2 w-full resize-y border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm leading-6 text-ink outline-none focus:border-brand" />
           </label>
@@ -297,6 +335,7 @@ export function AssignmentStudio() {
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button type="button" onClick={() => contentRef.current?.focus()} className="inline-flex items-center gap-2 text-xs font-semibold text-muted hover:text-brand"><FilePlus2 size={14} /> Or paste notes manually</button>
+          {topicId && <button type="button" onClick={createFollowUpStage} className="inline-flex items-center gap-2 border border-[var(--line)] px-3 py-2 text-xs font-semibold text-brand hover:border-brand">Create another stage for this topic</button>}
           {questions.length > 0 && <span className="text-xs text-muted">{questions.length} drafts ready to review</span>}
         </div>
 
@@ -317,6 +356,9 @@ export function AssignmentStudio() {
                 <label className="mt-3 block text-xs font-semibold text-white/75">Expected answer
                   <input value={question.answer} onChange={(event) => updateQuestion(question.id, { answer: event.target.value })} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
                 </label>
+                <label className="mt-3 block text-xs font-semibold text-white/75">Concept tag <span className="font-normal text-white/40">(used for weak-concept analysis)</span>
+                  <input value={question.conceptId ?? ""} onChange={(event) => updateQuestion(question.id, { conceptId: event.target.value.trim() || null })} placeholder="e.g. bfs-queue" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
+                </label>
                 {question.options && <label className="mt-3 block text-xs font-semibold text-white/75">Answer choices <span className="font-normal text-white/40">(one per line)</span>
                   <textarea value={question.options.join("\n")} onChange={(event) => updateQuestion(question.id, { options: event.target.value.split(/\r?\n/).map((option) => option.trim()).filter(Boolean) })} rows={4} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm leading-5 text-ink outline-none focus:border-brand" />
                 </label>}
@@ -334,7 +376,8 @@ export function AssignmentStudio() {
           </div>
         )}
 
-        {message && <p role="status" className="mt-4 text-xs leading-5 text-muted">{message}</p>}
+        {message && <p role={generationFailed ? "alert" : "status"} aria-live={generationFailed ? "assertive" : "polite"} className={`mt-4 text-xs leading-5 ${generationFailed ? "text-[#ffb3aa]" : "text-muted"}`}>{message}</p>}
+        {generationFailed && <button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf || (!content.trim() && !selectedPdfName)} className="mt-3 inline-flex items-center gap-2 border border-brand/40 px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-50"><WandSparkles size={14} /> Retry generation</button>}
         <p className="mt-5 border-t border-[var(--line)] pt-4 text-[11px] leading-5 text-muted">Saved assignments are loaded from the connected workspace. Nothing is shown until it has been saved.</p>
       </SectionCard>
 

@@ -3,6 +3,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import { visualExplanationSchema, type GeneratedQuestion, type TeacherDocument, type TeacherQuizSet } from "./contracts";
+import { listDemoStudentProfiles } from "@/features/student-portal/demo-profile-store";
+import { listDemoStudentEvents, type StudentLearningEvent } from "@/features/student-portal/events";
 
 interface AttemptRecord {
   id: string;
@@ -11,6 +13,7 @@ interface AttemptRecord {
   submittedAt: string;
   score: number;
   total: number;
+  learningStage?: "diagnostic" | "practice";
   responses: Array<{ questionId: string; response: string; correct: boolean; topic: string; difficulty: string; conceptId: string | null }>;
 }
 
@@ -30,7 +33,11 @@ async function readDemoState(): Promise<DemoState> {
     const state = parsed as Partial<DemoState>;
     return {
       documents: Array.isArray(state.documents) ? state.documents : [],
-      assignments: Array.isArray(state.assignments) ? state.assignments : [],
+      assignments: Array.isArray(state.assignments) ? state.assignments.map((assignment) => ({
+        ...assignment,
+        topicId: assignment.topicId ?? assignment.id,
+        learningStage: assignment.learningStage ?? "diagnostic",
+      })) : [],
       attempts: Array.isArray(state.attempts) ? state.attempts : [],
     };
   } catch (error) {
@@ -119,12 +126,14 @@ export async function saveAssignment(assignment: TeacherQuizSet): Promise<void> 
   }
   const { error } = await supabase.from("quiz_sets").upsert({
     id: assignment.id,
+    topic_id: assignment.topicId,
     owner_id: assignment.ownerId,
     title: assignment.title,
     subject: assignment.subject,
     topic: assignment.topic,
     instructions: assignment.instructions,
     status: assignment.status,
+    learning_stage: assignment.learningStage,
     available_from: assignment.availableFrom ?? null,
     due_at: assignment.dueAt ?? null,
     published_at: assignment.publishedAt ?? null,
@@ -175,15 +184,18 @@ export async function listTeacherAssignments(ownerId: string): Promise<TeacherQu
   return (data ?? []).map((row) => {
     const record = row as Record<string, unknown>;
     return {
-      id: String(record.id), ownerId: String(record.owner_id), title: String(record.title), subject: String(record.subject), topic: String(record.topic), instructions: String(record.instructions ?? ""), status: record.status as TeacherQuizSet["status"], createdAt: String(record.created_at), visualExplanation: parseVisualExplanation(record.visual_explanation),
+      id: String(record.id), topicId: String(record.topic_id ?? record.id), ownerId: String(record.owner_id), title: String(record.title), subject: String(record.subject), topic: String(record.topic), instructions: String(record.instructions ?? ""), status: record.status as TeacherQuizSet["status"], learningStage: record.learning_stage === "practice" ? "practice" : "diagnostic", createdAt: String(record.created_at), visualExplanation: parseVisualExplanation(record.visual_explanation),
       publishedAt: typeof record.published_at === "string" ? record.published_at : undefined,
       questions: Array.isArray(record.quiz_questions) ? record.quiz_questions.map((item) => ({ ...rowToQuestion(item as Record<string, unknown>), correctAnswer: answerById.get(String((item as Record<string, unknown>).id)) ?? "" })) : [],
     };
   });
 }
 
-export async function listPublishedAssignments(): Promise<TeacherQuizSet[]> {
-  const supabase = await supabaseFor();
+export async function listPublishedAssignments(demoMode = false): Promise<TeacherQuizSet[]> {
+  const supabase = demoMode ? createSupabaseAdminClient() : await supabaseFor();
+  if (demoMode && process.env.NEXT_PUBLIC_SUPABASE_URL && !supabase) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for demo students to read published topics when Supabase is configured.");
+  }
   const now = new Date().toISOString();
   if (!supabase) {
     const state = await readDemoState();
@@ -194,7 +206,7 @@ export async function listPublishedAssignments(): Promise<TeacherQuizSet[]> {
   return (data ?? []).map((row) => {
     const record = row as Record<string, unknown>;
     return {
-      id: String(record.id), ownerId: String(record.owner_id), title: String(record.title), subject: String(record.subject), topic: String(record.topic), instructions: String(record.instructions ?? ""), status: "published", createdAt: String(record.created_at), visualExplanation: parseVisualExplanation(record.visual_explanation),
+      id: String(record.id), topicId: String(record.topic_id ?? record.id), ownerId: String(record.owner_id), title: String(record.title), subject: String(record.subject), topic: String(record.topic), instructions: String(record.instructions ?? ""), status: "published", learningStage: record.learning_stage === "practice" ? "practice" : "diagnostic", createdAt: String(record.created_at), visualExplanation: parseVisualExplanation(record.visual_explanation),
       publishedAt: typeof record.published_at === "string" ? record.published_at : undefined,
       // Do not select quiz_question_answers here. This is the student-safe path.
       questions: Array.isArray(record.quiz_questions) ? record.quiz_questions.map((item) => rowToQuestion(item as Record<string, unknown>)) : [],
@@ -202,9 +214,20 @@ export async function listPublishedAssignments(): Promise<TeacherQuizSet[]> {
   });
 }
 
-export async function getAssignmentForAttempt(assignmentId: string, learnerId: string): Promise<TeacherQuizSet | null> {
-  const assignment = (await listPublishedAssignments()).find((item) => item.id === assignmentId) ?? null;
+export async function getAssignmentForAttempt(assignmentId: string, learnerId: string, demoMode = false): Promise<TeacherQuizSet | null> {
+  const assignment = (await listPublishedAssignments(demoMode)).find((item) => item.id === assignmentId) ?? null;
   if (!assignment) return null;
+  if (demoMode) {
+    const admin = createSupabaseAdminClient();
+    if (!admin) return assignment;
+    const { data: rows, error: questionError } = await admin.from("quiz_questions").select("*").eq("quiz_set_id", assignmentId).eq("review_status", "published");
+    if (questionError) throw new Error(`Could not load grading questions: ${questionError.message}`);
+    const ids = (rows ?? []).map((row) => String(row.id));
+    const { data: keys, error: keyError } = await admin.from("quiz_question_answers").select("question_id, correct_answer").in("question_id", ids);
+    if (keyError) throw new Error(`Could not load grading answer keys: ${keyError.message}`);
+    const keyById = new Map((keys ?? []).map((key) => [String(key.question_id), String(key.correct_answer)]));
+    return { ...assignment, questions: (rows ?? []).map((row) => ({ ...rowToQuestion(row as Record<string, unknown>), correctAnswer: keyById.get(String(row.id)) ?? "" })) };
+  }
   const supabase = await supabaseFor(learnerId);
   if (!supabase) return assignment;
   // The database policy is the final authorization boundary. This check keeps the
@@ -223,8 +246,8 @@ export async function getAssignmentForAttempt(assignmentId: string, learnerId: s
   return { ...assignment, questions: (rows ?? []).map((row) => ({ ...rowToQuestion(row as Record<string, unknown>), correctAnswer: keyById.get(String(row.id)) ?? "" })) };
 }
 
-export async function saveAttempt(attempt: AttemptRecord): Promise<{ saved: boolean; attempt: AttemptRecord }> {
-  const supabase = await supabaseFor(attempt.learnerId);
+export async function saveAttempt(attempt: AttemptRecord, demoMode = false): Promise<{ saved: boolean; attempt: AttemptRecord }> {
+  const supabase = demoMode ? null : await supabaseFor(attempt.learnerId);
   if (!supabase) {
     const state = await readDemoState();
     const duplicate = state.attempts.find((item) => item.id === attempt.id);
@@ -237,6 +260,7 @@ export async function saveAttempt(attempt: AttemptRecord): Promise<{ saved: bool
     id: attempt.id,
     quiz_set_id: attempt.assignmentId,
     learner_id: attempt.learnerId,
+    learning_stage: attempt.learningStage ?? "diagnostic",
     submitted_at: attempt.submittedAt,
     score: attempt.score,
     total: attempt.total,
@@ -246,6 +270,163 @@ export async function saveAttempt(attempt: AttemptRecord): Promise<{ saved: bool
   const { error: responseError } = await supabase.from("quiz_responses").upsert(attempt.responses.map((response) => ({ attempt_id: attempt.id, question_id: response.questionId, response: response.response, is_correct: response.correct, topic: response.topic, difficulty: response.difficulty, concept_id: response.conceptId })));
   if (responseError) throw new Error(`Could not save quiz responses: ${responseError.message}`);
   return { saved: true, attempt };
+}
+
+export async function listTeacherLearningRecords(ownerId: string): Promise<Array<{ student: { id: string; email: string; createdAt: string; lastActivityAt: string }; attempts: AttemptRecord[]; events: StudentLearningEvent[] }>> {
+  const profiles = await listDemoStudentProfiles();
+  const supabase = await supabaseFor(ownerId);
+  if (!supabase) {
+    const state = await readDemoState();
+    const assignments = state.assignments.filter((assignment) => assignment.ownerId === ownerId);
+    const assignmentIds = new Set(assignments.map((assignment) => assignment.id));
+    const events = await listDemoStudentEvents();
+    return profiles.flatMap((profile) => {
+      const attempts = state.attempts.filter((attempt) => attempt.learnerId === profile.id && assignmentIds.has(attempt.assignmentId));
+      const studentEvents = events.filter((event) => event.learnerId === profile.id && assignmentIds.has(event.assignmentId));
+      if (attempts.length === 0 && studentEvents.length === 0) return [];
+      const lastActivityAt = [profile.lastActivityAt, attempts[0]?.submittedAt ?? "", studentEvents[0]?.occurredAt ?? ""].sort().at(-1) ?? profile.lastActivityAt;
+      return [{ student: { ...profile, lastActivityAt }, attempts: attempts.map((attempt) => ({ ...attempt, learningStage: attempt.learningStage ?? "diagnostic" as const })).sort((left, right) => right.submittedAt.localeCompare(left.submittedAt)), events: studentEvents }];
+    });
+  }
+
+  const { data: quizRows, error: quizError } = await supabase.from("quiz_sets").select("id").eq("owner_id", ownerId);
+  if (quizError) throw new Error(`Could not read teacher topics: ${quizError.message}`);
+  const quizIds = (quizRows ?? []).map((row) => String(row.id));
+  if (quizIds.length === 0) return [];
+  const { data: attemptRows, error: attemptError } = await supabase.from("quiz_attempts").select("*").in("quiz_set_id", quizIds).order("submitted_at", { ascending: false });
+  if (attemptError) throw new Error(`Could not read teacher attempts: ${attemptError.message}`);
+  const { data: eventRows, error: eventError } = await supabase.from("student_learning_events").select("*").in("quiz_set_id", quizIds).order("occurred_at", { ascending: false });
+  if (eventError) throw new Error(`Could not read student learning events: ${eventError.message}`);
+  const learnerIds = [...new Set([...(attemptRows ?? []).map((row) => String(row.learner_id)), ...(eventRows ?? []).map((row) => String(row.learner_id))])];
+  const attemptIds = (attemptRows ?? []).map((row) => String(row.id));
+  const [{ data: responseRows, error: responseError }, { data: profileRows, error: profileError }] = await Promise.all([
+    attemptIds.length ? supabase.from("quiz_responses").select("*").in("attempt_id", attemptIds) : Promise.resolve({ data: [], error: null }),
+    learnerIds.length ? supabase.from("student_profiles").select("id,email,created_at,last_activity_at").in("id", learnerIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (responseError) throw new Error(`Could not read teacher responses: ${responseError.message}`);
+  if (profileError) throw new Error(`Could not read teacher student profiles: ${profileError.message}`);
+  const responsesByAttempt = new Map<string, AttemptRecord["responses"]>();
+  for (const row of responseRows ?? []) {
+    const attemptId = String(row.attempt_id);
+    const response = { questionId: String(row.question_id), response: String(row.response), correct: Boolean(row.is_correct), topic: String(row.topic), difficulty: String(row.difficulty), conceptId: typeof row.concept_id === "string" ? row.concept_id : null };
+    responsesByAttempt.set(attemptId, [...(responsesByAttempt.get(attemptId) ?? []), response]);
+  }
+  const attempts: AttemptRecord[] = (attemptRows ?? []).map((row) => ({
+    id: String(row.id), assignmentId: String(row.quiz_set_id), learnerId: String(row.learner_id), submittedAt: String(row.submitted_at),
+    score: Number(row.score), total: Number(row.total), learningStage: row.learning_stage === "practice" ? "practice" as const : "diagnostic" as const,
+    responses: responsesByAttempt.get(String(row.id)) ?? [],
+  }));
+  const profileById = new Map((profileRows ?? []).map((row) => [String(row.id), { id: String(row.id), email: String(row.email), createdAt: String(row.created_at), lastActivityAt: String(row.last_activity_at) }]));
+  const events: StudentLearningEvent[] = (eventRows ?? []).map((row) => ({
+    id: String(row.id), learnerId: String(row.learner_id), assignmentId: String(row.quiz_set_id), topicId: String(row.topic_id),
+    type: row.event_type as StudentLearningEvent["type"], conceptId: typeof row.concept_id === "string" ? row.concept_id : undefined,
+    occurredAt: String(row.occurred_at), metadata: row.metadata as StudentLearningEvent["metadata"],
+  }));
+  const records: Array<{ student: { id: string; email: string; createdAt: string; lastActivityAt: string }; attempts: AttemptRecord[]; events: StudentLearningEvent[] }> = learnerIds.map((learnerId) => {
+    const studentAttempts = attempts.filter((attempt) => attempt.learnerId === learnerId);
+    const studentEvents = events.filter((event) => event.learnerId === learnerId);
+    const profile = profileById.get(learnerId) ?? { id: learnerId, email: "Student account", createdAt: "", lastActivityAt: "" };
+    const lastActivityAt = [profile.lastActivityAt, studentAttempts[0]?.submittedAt ?? "", studentEvents[0]?.occurredAt ?? ""].sort().at(-1) ?? profile.lastActivityAt;
+    return { student: { ...profile, lastActivityAt }, attempts: studentAttempts, events: studentEvents };
+  }).filter((record) => record.attempts.length > 0 || record.events.length > 0);
+
+  if (process.env.STUDENT_DEMO_MODE === "true") {
+    const local = await readDemoState();
+    const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
+    const localAttempts = local.attempts.filter((attempt) => quizIds.includes(attempt.assignmentId));
+    const localEvents = (await listDemoStudentEvents()).filter((event) => quizIds.includes(event.assignmentId));
+    const localStudentIds = new Set([...localAttempts.map((attempt) => attempt.learnerId), ...localEvents.map((event) => event.learnerId)]);
+    for (const learnerId of localStudentIds) {
+      const student = profilesById.get(learnerId);
+      if (!student) continue;
+      records.push({
+        student,
+        attempts: localAttempts.filter((attempt) => attempt.learnerId === learnerId).map((attempt) => ({ ...attempt, learningStage: attempt.learningStage ?? "diagnostic" })),
+        events: localEvents.filter((event) => event.learnerId === learnerId),
+      });
+    }
+  }
+  return records;
+}
+
+function rowToAttempt(row: Record<string, unknown>, responses: Array<Record<string, unknown>>): AttemptRecord {
+  return {
+    id: String(row.id),
+    assignmentId: String(row.quiz_set_id),
+    learnerId: String(row.learner_id),
+    submittedAt: String(row.submitted_at),
+    score: Number(row.score),
+    total: Number(row.total),
+    learningStage: row.learning_stage === "practice" ? "practice" : "diagnostic",
+    responses: responses.map((response) => ({
+      questionId: String(response.question_id),
+      response: String(response.response),
+      correct: Boolean(response.is_correct),
+      topic: String(response.topic),
+      difficulty: String(response.difficulty),
+      conceptId: typeof response.concept_id === "string" ? response.concept_id : null,
+    })),
+  };
+}
+
+export async function listLearnerAttempts(learnerId: string, demoMode = false): Promise<AttemptRecord[]> {
+  const supabase = demoMode ? null : await supabaseFor(learnerId);
+  if (!supabase) return (await readDemoState()).attempts.filter((attempt) => attempt.learnerId === learnerId).sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
+  const { data: attempts, error } = await supabase.from("quiz_attempts").select("*").eq("learner_id", learnerId).order("submitted_at", { ascending: false });
+  if (error) throw new Error(`Could not read student attempts: ${error.message}`);
+  const attemptIds = (attempts ?? []).map((attempt) => String(attempt.id));
+  const { data: responses, error: responseError } = attemptIds.length > 0
+    ? await supabase.from("quiz_responses").select("*").in("attempt_id", attemptIds)
+    : { data: [], error: null };
+  if (responseError) throw new Error(`Could not read student responses: ${responseError.message}`);
+  const responsesByAttempt = new Map<string, Array<Record<string, unknown>>>();
+  for (const response of responses ?? []) {
+    const attemptId = String(response.attempt_id);
+    responsesByAttempt.set(attemptId, [...(responsesByAttempt.get(attemptId) ?? []), response as Record<string, unknown>]);
+  }
+  return (attempts ?? []).map((attempt) => rowToAttempt(attempt as Record<string, unknown>, responsesByAttempt.get(String(attempt.id)) ?? []));
+}
+
+export async function listTeacherAttempts(ownerId: string): Promise<{ attempts: AttemptRecord[]; profiles: Array<{ id: string; email: string; createdAt: string; lastActivityAt: string }> }> {
+  const supabase = await supabaseFor(ownerId);
+  if (!supabase) {
+    const state = await readDemoState();
+    const assignmentIds = new Set(state.assignments.filter((assignment) => assignment.ownerId === ownerId).map((assignment) => assignment.id));
+    const profiles = await listDemoStudentProfiles();
+    const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+    const attempts = state.attempts.filter((attempt) => assignmentIds.has(attempt.assignmentId) && profileById.has(attempt.learnerId)).sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
+    return { attempts, profiles: profiles.filter((profile) => attempts.some((attempt) => attempt.learnerId === profile.id)) };
+  }
+
+  const { data: quizzes, error: quizError } = await supabase.from("quiz_sets").select("id").eq("owner_id", ownerId);
+  if (quizError) throw new Error(`Could not read teacher quiz sets: ${quizError.message}`);
+  const quizIds = (quizzes ?? []).map((quiz) => String(quiz.id));
+  if (quizIds.length === 0) return { attempts: [], profiles: [] };
+  const { data: attemptRows, error: attemptError } = await supabase.from("quiz_attempts").select("*").in("quiz_set_id", quizIds).order("submitted_at", { ascending: false });
+  if (attemptError) throw new Error(`Could not read teacher attempts: ${attemptError.message}`);
+  const attemptIds = (attemptRows ?? []).map((attempt) => String(attempt.id));
+  const learnerIds = [...new Set((attemptRows ?? []).map((attempt) => String(attempt.learner_id)))];
+  const [{ data: responseRows, error: responseError }, { data: profileRows, error: profileError }] = await Promise.all([
+    attemptIds.length > 0 ? supabase.from("quiz_responses").select("*").in("attempt_id", attemptIds) : Promise.resolve({ data: [], error: null }),
+    learnerIds.length > 0 ? supabase.from("student_profiles").select("id,email,created_at,last_activity_at").in("id", learnerIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (responseError) throw new Error(`Could not read teacher responses: ${responseError.message}`);
+  if (profileError) throw new Error(`Could not read teacher student profiles: ${profileError.message}`);
+  const responsesByAttempt = new Map<string, Array<Record<string, unknown>>>();
+  for (const response of responseRows ?? []) {
+    const attemptId = String(response.attempt_id);
+    responsesByAttempt.set(attemptId, [...(responsesByAttempt.get(attemptId) ?? []), response as Record<string, unknown>]);
+  }
+  const attempts = (attemptRows ?? []).map((attempt) => rowToAttempt(attempt as Record<string, unknown>, responsesByAttempt.get(String(attempt.id)) ?? []));
+  const profiles = (profileRows ?? []).map((profile) => ({ id: String(profile.id), email: String(profile.email), createdAt: String(profile.created_at), lastActivityAt: String(profile.last_activity_at) }));
+  if (process.env.STUDENT_DEMO_MODE === "true") {
+    const local = await readDemoState();
+    const demoProfiles = await listDemoStudentProfiles();
+    const demoAttempts = local.attempts.filter((attempt) => quizIds.includes(attempt.assignmentId));
+    attempts.push(...demoAttempts);
+    profiles.push(...demoProfiles.filter((profile) => demoAttempts.some((attempt) => attempt.learnerId === profile.id)));
+  }
+  return { attempts: attempts.sort((left, right) => right.submittedAt.localeCompare(left.submittedAt)), profiles };
 }
 
 export type { AttemptRecord };

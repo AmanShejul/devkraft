@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { AppRole } from "@/lib/auth/authorization";
 import { hasAppRole } from "@/lib/auth/authorization";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import type { ApiResponse } from "@/types/api";
 
 const workspacePaths: Record<AppRole, string> = {
   student: "/student",
@@ -17,10 +19,12 @@ const roleLoginPaths: Record<AppRole, string> = {
   teacher: "/login/teacher",
 };
 
-export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleMismatch?: boolean }) {
+export function LoginForm({ role, roleMismatch = false, demoMode = false }: { role: AppRole; roleMismatch?: boolean; demoMode?: boolean }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [registering, setRegistering] = useState(false);
   const [error, setError] = useState(roleMismatch ? "This account does not have access to this workspace." : "");
   const [pending, setPending] = useState(false);
   const supabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -31,11 +35,39 @@ export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleM
     setError("");
     setPending(true);
 
+    if (role === "student" && demoMode) {
+      try {
+        const response = await fetch("/api/student/demo-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const payload = await response.json() as ApiResponse<{ profile: { email: string }; created: boolean; demoMode: true }>;
+        if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Student demo access could not be created." : payload.error.message);
+        setPassword("");
+        router.replace(workspacePaths.student);
+        router.refresh();
+      } catch (submitError) {
+        setError(submitError instanceof Error ? submitError.message : "Student demo access could not be created.");
+        setPending(false);
+      }
+      return;
+    }
+
     const supabase = createSupabaseBrowserClient();
     if (!supabase) {
       if (role === "teacher" && email.trim() && password.length > 0) {
-        router.replace("/teacher");
-        router.refresh();
+        try {
+          const response = await fetch("/api/teacher/demo-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+          const payload = await response.json() as ApiResponse<{ email: string; demoMode: true }>;
+          if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Teacher demo access could not be created." : payload.error.message);
+          setPassword("");
+          router.replace("/teacher");
+          router.refresh();
+        } catch (submitError) {
+          setError(submitError instanceof Error ? submitError.message : "Teacher demo access could not be created.");
+          setPending(false);
+        }
         return;
       }
       setError("Enter an email and password to continue.");
@@ -69,7 +101,13 @@ export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleM
         <h1 className="mt-3 text-3xl font-bold text-ink">Sign in</h1>
         <p className="mt-2 text-sm leading-6 text-muted">Use the {role} account assigned to you.</p>
 
-        {!supabaseConfigured && (
+        {role === "student" && demoMode ? <div className="mt-5 flex items-center justify-between gap-3 border border-brand/25 bg-brand/[.05] px-3 py-3">
+          <div><p className="text-[10px] font-bold uppercase tracking-[.13em] text-brand">Demo mode</p><p className="mt-1 text-xs leading-5 text-muted">{registering ? "Create a profile with your email." : "Any valid email and non-empty password works."} Passwords are not stored.</p></div>
+          <div className="flex shrink-0 border border-[var(--line)] p-1" role="group" aria-label="Student demo account action">
+            <button type="button" aria-pressed={!registering} onClick={() => setRegistering(false)} className={`px-2.5 py-2 text-[11px] font-semibold ${registering ? "text-muted" : "bg-brand text-[#171411]"}`}>Login</button>
+            <button type="button" aria-pressed={registering} onClick={() => setRegistering(true)} className={`px-2.5 py-2 text-[11px] font-semibold ${registering ? "bg-brand text-[#171411]" : "text-muted"}`}>Register</button>
+          </div>
+        </div> : !supabaseConfigured && (
           <p className="mt-5 border-l-2 border-brand px-3 py-2 text-xs leading-5 text-muted">
             {role === "teacher" ? "Local teacher access is available while authentication is being configured. Set the Supabase URL and anon key to enforce account roles." : "Authentication is not configured yet. Set the Supabase URL and anon key to enable sign-in."}
           </p>
@@ -92,22 +130,27 @@ export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleM
           </label>
           <label className="block text-xs font-semibold text-white/75">
             Password
-            <input
-              type="password"
-              name="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand"
-            />
+            <span className="relative mt-2 block">
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                autoComplete={registering ? "new-password" : "current-password"}
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 pr-11 text-sm text-ink outline-none focus:border-brand"
+              />
+              <button type="button" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword((visible) => !visible)} className="absolute inset-y-0 right-0 grid w-11 place-items-center text-white/45 hover:text-white">
+                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </span>
           </label>
           <button
             type="submit"
-            disabled={pending || (!supabaseConfigured && role !== "teacher")}
+            disabled={pending || (!supabaseConfigured && role === "student" && !demoMode)}
             className="w-full bg-brand px-4 py-3 text-sm font-bold text-[#171411] transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? "Signing in..." : supabaseConfigured || role !== "teacher" ? `Sign in as ${role}` : "Enter teacher workspace"}
+            {pending ? "Signing in..." : role === "student" && demoMode && registering ? "Create demo profile" : supabaseConfigured || role !== "teacher" ? `Sign in as ${role}` : "Enter teacher workspace"}
           </button>
         </form>
 

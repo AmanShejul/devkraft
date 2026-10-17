@@ -2,6 +2,7 @@ import type { VisualExplanation } from "./contracts";
 
 export type QuestionDifficulty = "foundation" | "intermediate" | "advanced";
 export type AssignmentStatus = "draft" | "published";
+export type LearningStage = "diagnostic" | "practice";
 
 export type DraftQuestion = {
   id: string;
@@ -9,6 +10,7 @@ export type DraftQuestion = {
   answer: string;
   source: string;
   difficulty: QuestionDifficulty;
+  conceptId?: string | null;
   options?: string[];
   explanation?: string;
   sourceDocumentId?: string;
@@ -19,12 +21,14 @@ export type DraftQuestion = {
 
 export type TeacherAssignment = {
   id: string;
+  topicId: string;
   title: string;
   subject: string;
   topic: string;
   content: string;
   questions: DraftQuestion[];
   status: AssignmentStatus;
+  learningStage: LearningStage;
   createdAt: string;
   publishedAt?: string;
   sourceFiles?: string[];

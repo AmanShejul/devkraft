@@ -3,6 +3,7 @@ import { z } from "zod";
 export const questionDifficultySchema = z.enum(["foundation", "intermediate", "advanced"]);
 export const questionTypeSchema = z.enum(["mcq", "short-answer"]);
 export const questionStatusSchema = z.enum(["draft", "reviewed", "published", "archived"]);
+export const learningStageSchema = z.enum(["diagnostic", "practice"]);
 
 export const sourceReferenceSchema = z.object({
   documentId: z.string().min(1),
@@ -81,6 +82,7 @@ export type SourceChunk = z.infer<typeof sourceChunkSchema>;
 export type QuestionDifficulty = z.infer<typeof questionDifficultySchema>;
 export type QuestionType = z.infer<typeof questionTypeSchema>;
 export type QuestionStatus = z.infer<typeof questionStatusSchema>;
+export type LearningStage = z.infer<typeof learningStageSchema>;
 export type VisualExplanation = z.infer<typeof visualExplanationSchema>;
 
 export interface TeacherDocument {
@@ -96,12 +98,14 @@ export interface TeacherDocument {
 
 export interface TeacherQuizSet {
   id: string;
+  topicId: string;
   ownerId: string;
   title: string;
   subject: string;
   topic: string;
   instructions: string;
   status: QuestionStatus;
+  learningStage: LearningStage;
   createdAt: string;
   publishedAt?: string;
   availableFrom?: string;

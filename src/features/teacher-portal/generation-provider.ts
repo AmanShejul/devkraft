@@ -2,6 +2,7 @@ export type QuestionGenerator = {
   provider: "gemini" | "ollama";
   generate: () => Promise<unknown>;
   validationRetries?: number;
+  stopRetryOnValidationError?: (error: unknown) => boolean;
 };
 
 export async function generateWithFallback<T>(
@@ -23,6 +24,7 @@ export async function generateWithFallback<T>(
         return { provider: generator.provider, result: validate(output) };
       } catch (error) {
         lastError = error;
+        if (generator.stopRetryOnValidationError?.(error)) break;
       }
     }
   }
