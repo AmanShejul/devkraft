@@ -9,10 +9,18 @@ type WorkerResponse = {
   error?: string;
 };
 
+type WorkerStatusMessage =
+  | { type: "ready" }
+  | { type: "runtime-error"; error: string };
+
 type PendingRun = {
   resolve: (result: { output: string } | { error: string }) => void;
-  timer: ReturnType<typeof setTimeout>;
+  loadTimer: ReturnType<typeof setTimeout>;
+  timeoutMs: number;
+  timer?: ReturnType<typeof setTimeout>;
 };
+
+const RUNTIME_LOAD_TIMEOUT_MS = 60_000;
 
 let worker: Worker | null = null;
 let status: PyodideStatus = "idle";
@@ -21,6 +29,7 @@ const pendingRuns = new Map<number, PendingRun>();
 
 function resolvePendingWithError(error: string) {
   for (const [id, pending] of pendingRuns) {
+    clearTimeout(pending.loadTimer);
     clearTimeout(pending.timer);
     pending.resolve({ error });
     pendingRuns.delete(id);
@@ -35,12 +44,28 @@ function disposeWorker(error: string) {
 }
 
 function handleWorkerMessage(event: MessageEvent<WorkerResponse>) {
-  const message = event.data;
+  const message = event.data as WorkerResponse | WorkerStatusMessage;
+  if ("type" in message && message.type === "ready") {
+    status = "ready";
+    for (const [id, pending] of pendingRuns) {
+      clearTimeout(pending.loadTimer);
+      pending.timer = setTimeout(() => {
+        if (!pendingRuns.has(id)) return;
+        disposeWorker("The Python program exceeded the 12-second execution limit.");
+      }, pending.timeoutMs);
+    }
+    return;
+  }
+  if ("type" in message && message.type === "runtime-error") {
+    disposeWorker(`The local Python runtime could not load: ${message.error}`);
+    return;
+  }
   if (!message || typeof message.id !== "number") return;
 
   const pending = pendingRuns.get(message.id);
   if (!pending) return;
   pendingRuns.delete(message.id);
+  clearTimeout(pending.loadTimer);
   clearTimeout(pending.timer);
   status = "ready";
 
@@ -80,11 +105,19 @@ export function runPython(code: string, timeoutMs = 12_000): Promise<{ output: s
     }
 
     const id = nextRequestId++;
-    const timer = setTimeout(() => {
+    const loadTimer = setTimeout(() => {
       if (!pendingRuns.has(id)) return;
-      disposeWorker("The Python program exceeded the 12-second execution limit.");
-    }, timeoutMs);
-    pendingRuns.set(id, { resolve, timer });
+      disposeWorker("The Python runtime took too long to load. Check the browser connection and try again.");
+    }, status === "ready" ? 0 : RUNTIME_LOAD_TIMEOUT_MS);
+    pendingRuns.set(id, { resolve, loadTimer, timeoutMs });
+
+    if (status === "ready") {
+      clearTimeout(loadTimer);
+      pendingRuns.get(id)!.timer = setTimeout(() => {
+        if (!pendingRuns.has(id)) return;
+        disposeWorker("The Python program exceeded the 12-second execution limit.");
+      }, timeoutMs);
+    }
 
     try {
       activeWorker.postMessage({ id, code });

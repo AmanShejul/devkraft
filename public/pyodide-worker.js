@@ -7,6 +7,13 @@ importScripts("https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js");
 
 let runtimePromise = loadPyodide({ indexURL: PYODIDE_BASE_URL });
 
+runtimePromise
+  .then(() => self.postMessage({ type: "ready" }))
+  .catch((caught) => {
+    const error = caught instanceof Error ? caught.message : String(caught);
+    self.postMessage({ type: "runtime-error", error });
+  });
+
 self.onmessage = async (event) => {
   const message = event.data;
   const id = message && message.id;

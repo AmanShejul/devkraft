@@ -38,6 +38,7 @@ describe("Pyodide client protocol", () => {
 
     expect(client.getStatus()).toBe("loading");
     expect(worker?.message).toEqual({ id: 1, code: "print(42)" });
+    worker?.onmessage?.({ data: { type: "ready" } } as MessageEvent);
     worker?.onmessage?.({ data: { id: 1, ok: true, output: "42\n" } } as MessageEvent);
 
     await expect(pending).resolves.toEqual({ output: "42\n" });
@@ -50,6 +51,7 @@ describe("Pyodide client protocol", () => {
     const first = client.runPython("while True: pass");
     const firstWorker = MockWorker.last;
 
+    firstWorker?.onmessage?.({ data: { type: "ready" } } as MessageEvent);
     await vi.advanceTimersByTimeAsync(12_000);
     await expect(first).resolves.toEqual({ error: "The Python program exceeded the 12-second execution limit." });
     expect(firstWorker?.terminated).toBe(true);
