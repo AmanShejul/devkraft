@@ -756,7 +756,7 @@ export default function HeroSculptureCanvas() {
       const nextPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
       const nextWidth = Math.round(bounds.width * nextPixelRatio);
       const nextHeight = Math.round(bounds.height * nextPixelRatio);
-      if (!resizePending && nextWidth === canvas.width && nextHeight === canvas.height) return;
+      if (!resizePending && backgroundGlow && nextWidth === canvas.width && nextHeight === canvas.height && pixelRatio === nextPixelRatio) return;
 
       width = bounds.width;
       height = bounds.height;
