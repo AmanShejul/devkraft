@@ -23,10 +23,20 @@ describe("local Ollama JSON generation", () => {
       model: "llama3.2:latest",
       format: schema,
       stream: false,
-      options: { temperature: 0.2, num_predict: 8192 },
+      options: { temperature: 0.2, num_predict: 4096, num_ctx: 8192 },
       prompt: "Make questions from these notes",
       system: expect.any(String),
     });
+  });
+
+  it("caps output length for faster bounded question generation", async () => {
+    const mockFetch = vi.fn(async () => Response.json({ response: "{\"questions\":[]}" }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await generateOllamaJson("Make five questions", { type: "object" }, { maxOutputTokens: 2_800 });
+
+    const [, init] = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).options.num_predict).toBe(2_800);
   });
 
   it("reports unavailable local Ollama without leaking network errors", async () => {

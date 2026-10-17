@@ -14,6 +14,7 @@ import { SessionReplay } from "@/components/coding/session-replay";
 import { MagneticButton } from "@/components/ui/magnetic-button";
 import { AnimatedNumber } from "@/components/ui/text-animation";
 import { isStoredArenaSession, readStoredArenaSessions, SESSION_HISTORY_STORAGE_KEY, SESSION_STORAGE_KEY } from "@/features/integrity/session-storage";
+import { PyodideRunnerError, runPythonInBrowser } from "@/features/code-execution/pyodide-runner";
 
 const Monaco = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -64,7 +65,7 @@ function isCodeSubmissionResponse(value: unknown): value is CodeSubmissionRespon
 function describeFailure(code: string | undefined, fallback: string) {
   switch (code) {
     case "EXECUTION_PROVIDER_NOT_CONFIGURED":
-      return "Execution provider not configured. Your code was not run.";
+      return "Code execution is disabled on this deployment. Configure Judge0 or JDoodle server variables and redeploy.";
     case "EXECUTION_PROVIDER_UNAVAILABLE":
       return "The execution provider is temporarily unavailable. Your code was not run.";
     case "EXECUTION_PROVIDER_MISCONFIGURED":
@@ -111,7 +112,7 @@ export function CodeEditor() {
   const [sourceCode, setSourceCode] = useState(starterCode.typescript);
   const [stdin, setStdin] = useState("");
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState("Execution provider not configured. Your code has not been run.");
+  const [message, setMessage] = useState("Ready to run. Choose Run to execute your code.");
   const [errorCode, setErrorCode] = useState<string>();
   const [execution, setExecution] = useState<CodeExecutionResult | null>(null);
   const [submission, setSubmission] = useState<CodeSubmissionResponse | null>(null);
@@ -228,6 +229,8 @@ export function CodeEditor() {
     setVivaUnderstandingScore(null);
     setVivaMessage("");
     setErrorCode(undefined);
+    setProviderReady(false);
+    setMessage(nextLanguage === "python" ? "Python runs locally in your browser with Pyodide." : "Ready to run. Choose Run to execute your code.");
   }
 
   function changeSourceCode(value: string) {
@@ -261,6 +264,26 @@ export function CodeEditor() {
     setExecution(null);
     setSubmission(null);
     setErrorCode(undefined);
+    if (action === "run" && language === "python") {
+      setMessage("Starting the local Python runtimeâ€¦");
+      try {
+        const result = await runPythonInBrowser(submittedSource, stdin);
+        setExecution(result);
+        setProviderReady(true);
+        setMessage(describeResult(result));
+      } catch (error) {
+        if (error instanceof PyodideRunnerError) {
+          setErrorCode(error.kind === "timeout" ? "PYODIDE_TIMEOUT" : "PYODIDE_UNAVAILABLE");
+          setMessage(error.message);
+        } else {
+          setErrorCode("PYODIDE_UNAVAILABLE");
+          setMessage("The local Python runtime could not start. Check the browser connection and try again.");
+        }
+      } finally {
+        setPending(false);
+      }
+      return;
+    }
     setMessage(action === "run" ? "Checking provider…" : action === "hostile" ? "Sending hostile input with a 12-second timeout…" : "Checking provider for hidden tests…");
     try {
       const response = await fetch(isSubmission ? "/api/code/submit" : "/api/code/run", {

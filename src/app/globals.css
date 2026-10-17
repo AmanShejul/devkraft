@@ -97,6 +97,16 @@ pre, code { font-family: var(--font-mono); }
   from { transform: translateX(-20%); }
   to { transform: translateX(300%); }
 }
+@keyframes generation-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(330%); }
+}
+.generation-progress { animation: generation-progress 1.5s ease-in-out infinite; }
+@keyframes question-arrive {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.question-arrive { animation: question-arrive .35s ease-out both; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

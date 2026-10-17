@@ -30,16 +30,28 @@ export function getStarCursorOffset(
   cursorY: number,
   radius = 180,
   strength = 18,
+  output?: { x: number; y: number },
 ) {
   const dx = starX - cursorX;
   const dy = starY - cursorY;
   const distance = Math.hypot(dx, dy);
-  if (distance >= radius || distance === 0) return { x: 0, y: 0 };
+  if (distance >= radius || distance === 0) {
+    if (output) {
+      output.x = 0;
+      output.y = 0;
+      return output;
+    }
+    return { x: 0, y: 0 };
+  }
 
   const influence = (1 - distance / radius) ** 2;
   const amount = strength * influence;
-  return {
-    x: (dx / distance) * amount,
-    y: (dy / distance) * amount,
-  };
+  const x = (dx / distance) * amount;
+  const y = (dy / distance) * amount;
+  if (output) {
+    output.x = x;
+    output.y = y;
+    return output;
+  }
+  return { x, y };
 }

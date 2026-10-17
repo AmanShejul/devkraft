@@ -103,7 +103,9 @@ describe("code execution API handler", () => {
   it("reports an unconfigured provider without fabricating an execution result", async () => {
     const response = await handleCodeExecutionRequest(postJson(JSON.stringify(validRequest)), null);
     expect(response.status).toBe(503);
-    expect((await response.json()).error.code).toBe("EXECUTION_PROVIDER_NOT_CONFIGURED");
+    const body = await response.json();
+    expect(body.error.code).toBe("EXECUTION_PROVIDER_NOT_CONFIGURED");
+    expect(body.error.message).toContain("JUDGE0_API_URL");
   });
 
   it("maps provider timeouts, unavailability, and errors to safe API failures", async () => {

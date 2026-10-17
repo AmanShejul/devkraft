@@ -35,6 +35,26 @@ describe("teacher document RAG", () => {
     expect(result[0].content).toContain("condition");
   });
 
+  it("samples relevant evidence across long documents instead of only the opening sections", () => {
+    const longDocument = Array.from({ length: 40 }, (_, index) => ({
+      chunkId: `doc-long-${index}`,
+      documentId: "doc-long",
+      documentName: "long-notes.txt",
+      content: `Database topic section ${index} explains tables and records in detail.`,
+      page: null,
+      topic: null,
+      concepts: [],
+    }));
+
+    const result = retrieveRelevantChunks(longDocument, { documentIds: ["doc-long"], topic: "database", limit: 8 });
+    const positions = result.map((chunk) => longDocument.findIndex((candidate) => candidate.chunkId === chunk.chunkId));
+
+    expect(result).toHaveLength(8);
+    expect(positions[0]).toBeLessThan(5);
+    expect(positions.at(-1)).toBeGreaterThan(34);
+    expect(new Set(positions.map((position) => Math.floor(position / 5))).size).toBeGreaterThanOrEqual(7);
+  });
+
   it("does not return unrelated private-document evidence", () => {
     expect(retrieveRelevantChunks(chunks, { documentIds: ["doc-b"], topic: "Loops" })).toHaveLength(0);
   });

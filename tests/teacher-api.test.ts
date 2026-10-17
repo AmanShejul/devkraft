@@ -155,7 +155,7 @@ describe("teacher question API safety", () => {
           ["What does breadth-first search visit?", "vertices"],
           ["Which traversal explores graph levels?", "breadth-first search"],
           ["What does the queue hold during traversal?", "vertices"],
-        ].map(([prompt, correctAnswer]) => ({ prompt, options: [...options, correctAnswer], correctAnswer, explanation: `The notes explain ${correctAnswer} in the traversal process.`, sourceChunkId })),
+        ].map(([prompt, correctAnswer]) => ({ prompt, options: [correctAnswer, ...options.filter((option) => option !== correctAnswer)].slice(0, 3), correctAnswer, explanation: `The notes explain ${correctAnswer} in the traversal process.`, sourceChunkId })),
         visualExplanation: { title: "Breadth-first search", summary: "The traversal explores graph levels with a queue.", nodes: [
           { id: "search", label: "Breadth-first search", description: "Explores graph levels.", sourceChunkId },
           { id: "queue", label: "Queue", description: "Holds the next vertices.", sourceChunkId },

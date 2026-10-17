@@ -11,7 +11,7 @@ import { persistenceErrorDetails } from "@/lib/persistence";
 function executionFailure(kind: string): Response {
   switch (kind) {
     case "provider-not-configured":
-      return Response.json(apiFailure("EXECUTION_PROVIDER_NOT_CONFIGURED", "No code-execution provider is configured on the server."), { status: 503 });
+      return Response.json(apiFailure("EXECUTION_PROVIDER_NOT_CONFIGURED", "Code execution is disabled. Configure Judge0 with JUDGE0_API_URL (and JUDGE0_API_KEY when required), or configure JDoodle server credentials."), { status: 503 });
     case "provider-misconfigured":
       return Response.json(apiFailure("EXECUTION_PROVIDER_MISCONFIGURED", "The execution provider is not configured correctly on the server."), { status: 503 });
     case "provider-quota-exhausted":

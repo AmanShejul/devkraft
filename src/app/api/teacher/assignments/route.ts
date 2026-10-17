@@ -51,6 +51,9 @@ export async function POST(request: Request): Promise<Response> {
       && item.status !== "archived");
     const assignment: TeacherQuizSet = {
       ...parsed.data,
+      questions: parsed.data.status === "published"
+        ? parsed.data.questions.map((question) => ({ ...question, reviewStatus: "published" }))
+        : parsed.data.questions,
       id: parsed.data.id ?? randomUUID(),
       topicId: parsed.data.topicId ?? existing?.topicId ?? sameTopic?.topicId ?? randomUUID(),
       ownerId,

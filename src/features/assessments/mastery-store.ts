@@ -4,7 +4,7 @@ import path from "node:path";
 import { cookies } from "next/headers";
 import type { ConceptMastery } from "@/types/domain";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isDemoStudentIdentity, isStudentDemoModeEnabled } from "@/lib/auth/student-session";
+import { isDemoStudentIdentity } from "@/lib/auth/student-session";
 import { assertLocalPersistenceAllowed } from "@/lib/persistence";
 
 const LEARNER_COOKIE = "skillpath_learner_id";
@@ -29,22 +29,12 @@ function isConceptMasteryArray(value: unknown): value is ConceptMastery[] {
 }
 
 export async function getCurrentLearnerId(): Promise<string | null> {
-  const supabase = await createSupabaseServerClient();
-  if (supabase && !isStudentDemoModeEnabled()) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user?.app_metadata?.roles && Array.isArray(user.app_metadata.roles) && user.app_metadata.roles.includes("student")) return user.id;
-  }
   const cookieStore = await cookies();
   const learnerId = cookieStore.get(LEARNER_COOKIE)?.value;
   return learnerId && LEARNER_ID_PATTERN.test(learnerId) ? learnerId : null;
 }
 
 export async function getOrCreateLearnerId(): Promise<string> {
-  const supabase = await createSupabaseServerClient();
-  if (supabase && !isStudentDemoModeEnabled()) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user?.app_metadata?.roles && Array.isArray(user.app_metadata.roles) && user.app_metadata.roles.includes("student")) return user.id;
-  }
   const cookieStore = await cookies();
   const existingId = cookieStore.get(LEARNER_COOKIE)?.value;
   if (existingId && LEARNER_ID_PATTERN.test(existingId)) return existingId;

@@ -38,8 +38,22 @@ export function AssignmentStudio() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedPdfName, setSelectedPdfName] = useState("");
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [generationSeconds, setGenerationSeconds] = useState(0);
   const [generationFailed, setGenerationFailed] = useState(false);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const questionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!generatingPdf) return;
+    const timer = window.setInterval(() => setGenerationSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [generatingPdf]);
+
+  useEffect(() => {
+    if (questions.length > 0 && !generatingPdf) {
+      questionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [questions.length, generatingPdf]);
 
   useEffect(() => {
     fileInputRef.current?.setAttribute("webkitdirectory", "");
@@ -135,8 +149,10 @@ export function AssignmentStudio() {
       return;
     }
     setGeneratingPdf(true);
+    setGenerationSeconds(0);
     setGenerationFailed(false);
-    setMessage("Preparing question drafts from your material…");
+    setQuestions([]);
+    setMessage("Preparing your notes for question generation…");
     try {
       const form = new FormData();
       form.append("file", file);
@@ -148,7 +164,7 @@ export function AssignmentStudio() {
       form.append("learningStage", learningStage);
       form.append("count", learningStage === "diagnostic" ? "5" : "7");
       const response = await fetch("/api/teacher/questions", { method: "POST", body: form, signal: AbortSignal.timeout(240_000) });
-      const payload = await response.json() as ApiResponse<{ questions: GeneratedQuestion[]; requestedCount: number; visualExplanation: VisualExplanation | null; sourceFile: string; difficulty: QuestionDifficulty; generationProvider: "gemini" | "ollama" }>;
+      const payload = await response.json() as ApiResponse<{ questions: GeneratedQuestion[]; requestedCount: number; visualExplanation: VisualExplanation | null; sourceFile: string; difficulty: QuestionDifficulty; generationProvider: "gemini" | "ollama"; retrieval: { chunks: Array<{ id: string; page: number | null; excerpt: string }> } }>;
       if (!response.ok || !payload.ok) throw new Error(payload.ok ? "Questions could not be created right now." : payload.error.message);
       const generatedQuestions = payload.data.questions.map((question) => ({ id: question.id, prompt: question.prompt, answer: question.correctAnswer, source: question.source.excerpt, difficulty: question.difficulty, options: question.options, explanation: question.explanation, sourceDocumentId: question.source.documentId, sourcePage: question.source.page, reviewStatus: "draft" as const, generationStatus: question.generationStatus }));
       setQuestions(generatedQuestions);
@@ -158,19 +174,8 @@ export function AssignmentStudio() {
       setGenerationFailed(false);
       const questionCount = payload.data.questions.length;
       const questionCountLabel = questionCount < payload.data.requestedCount ? `${questionCount} of ${payload.data.requestedCount} requested` : `${questionCount}`;
-      const canPublishAutomatically = Boolean(title.trim() && subject.trim() && topic.trim())
-        && generatedQuestions.every((question) => question.generationStatus === "grounded")
-        && (learningStage === "diagnostic" ? generatedQuestions.length >= 4 && generatedQuestions.length <= 5 : generatedQuestions.length >= 6 && generatedQuestions.length <= 7);
-      if (canPublishAutomatically) {
-        const published = await saveAssignment("published", generatedQuestions, payload.data.visualExplanation);
-        if (published) {
-          setMessage(`Created ${questionCountLabel} questions from ${payload.data.sourceFile} using ${providerName} and published them to the student portal.`);
-        } else {
-          setGenerationFailed(true);
-        }
-      } else {
-        setMessage(`Created ${questionCountLabel} editable questions from ${payload.data.sourceFile} using ${providerName}. Add the assignment details and review any flagged questions before publishing.`);
-      }
+      const evidenceSectionCount = payload.data.retrieval.chunks.length;
+      setMessage(`Created ${questionCountLabel} drafts from ${payload.data.sourceFile} using ${providerName} and ${evidenceSectionCount} sections of your notes. Review and approve the questions before publishing.`);
     } catch (error) {
       setGenerationFailed(true);
       setMessage(error instanceof Error ? error.message : "Questions could not be created from this material.");
@@ -180,11 +185,20 @@ export function AssignmentStudio() {
   }
 
   function updateQuestion(id: string, patch: Partial<DraftQuestion>) {
-    setQuestions((current) => current.map((question) => question.id === id ? { ...question, ...patch } : question));
+    const needsApprovalReset = Object.keys(patch).some((key) => key !== "reviewStatus" && key !== "generationStatus");
+    setQuestions((current) => current.map((question) => question.id === id
+      ? { ...question, ...patch, ...(needsApprovalReset ? { generationStatus: "needs-review" as const, reviewStatus: "draft" as const } : {}) }
+      : question));
   }
 
-  function verifyQuestion(id: string) {
-    updateQuestion(id, { generationStatus: "grounded", reviewStatus: "reviewed" });
+  function approveQuestion(id: string) {
+    setQuestions((current) => current.map((question) => question.id === id
+      ? { ...question, generationStatus: "grounded", reviewStatus: "reviewed" }
+      : question));
+  }
+
+  function approveAllQuestions() {
+    setQuestions((current) => current.map((question) => ({ ...question, generationStatus: "grounded", reviewStatus: "reviewed" })));
   }
 
   async function saveAssignment(status: "draft" | "published", questionList = questions, visualGuide = visualExplanation): Promise<boolean> {
@@ -194,6 +208,10 @@ export function AssignmentStudio() {
     }
     if (status === "published" && (learningStage === "diagnostic" ? questionList.length < 4 || questionList.length > 5 : questionList.length < 6 || questionList.length > 7)) {
       setMessage(learningStage === "diagnostic" ? "A published diagnostic needs 4 to 5 questions. Generate or prepare more questions before publishing." : "A published follow-up set needs 6 to 7 questions. Generate or prepare more questions before publishing.");
+      return false;
+    }
+    if (status === "published" && questionList.some((question) => question.generationStatus !== "grounded" || (question.reviewStatus !== "reviewed" && question.reviewStatus !== "published"))) {
+      setMessage("Approve every question after checking its wording, answer, and source before publishing.");
       return false;
     }
 
@@ -222,7 +240,7 @@ export function AssignmentStudio() {
       ...(question.options && question.options.length > 1 ? { options: question.options } : {}), correctAnswer: question.answer,
       explanation: question.explanation ?? "Review the supporting source excerpt before using this answer.", subject: subject.trim(), topic: topic.trim(), conceptId: question.conceptId ?? null,
       difficulty: question.difficulty, source: { documentId: question.sourceDocumentId ?? "manual-content", documentName: selectedFiles[0]?.name ?? "Teacher notes", page: question.sourcePage ?? null, excerpt: question.source },
-      generationStatus: question.generationStatus ?? "needs-review", reviewStatus: status === "published" ? "published" : (question.reviewStatus ?? "draft"),
+      generationStatus: question.generationStatus ?? "needs-review", reviewStatus: question.reviewStatus ?? "draft",
     }));
     try {
       const response = await fetch("/api/teacher/assignments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: assignment.id, topicId: assignment.topicId, title: assignment.title, subject: assignment.subject, topic: assignment.topic, instructions: assignment.content, learningStage, status, visualExplanation: visualGuide, questions: payloadQuestions }) });
@@ -264,6 +282,13 @@ export function AssignmentStudio() {
 
   const published = assignments.filter((assignment) => assignment.status === "published");
   const recentSubmissions: AssignmentSubmission[] = [];
+  const approvedQuestionCount = questions.filter((question) => question.generationStatus === "grounded" && question.reviewStatus === "reviewed").length;
+  const validQuestionCount = learningStage === "diagnostic"
+    ? questions.length >= 4 && questions.length <= 5
+    : questions.length >= 6 && questions.length <= 7;
+  const canPublish = Boolean(title.trim() && subject.trim() && topic.trim())
+    && validQuestionCount
+    && approvedQuestionCount === questions.length;
 
   return (
     <div className="space-y-5">
@@ -274,19 +299,13 @@ export function AssignmentStudio() {
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[.16em] text-brand">Assignment studio</p>
             <h2 className="mt-1 text-xl font-semibold tracking-[-.03em] text-ink">Create a student assignment</h2>
-            <p className="mt-1 text-xs leading-5 text-muted">Add teaching content and generate a student-ready question set. Flagged questions remain drafts for review.</p>
+            <p className="mt-1 text-xs leading-5 text-muted">Upload your notes and generate question drafts first. Add assignment details after the questions are ready, then review and approve them.</p>
           </div>
           </div>
-          <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em] text-white/45">Grounded sets auto-publish</span>
+          <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em] text-white/45">Teacher approval required</span>
         </div>
 
         <input ref={fileInputRef} type="file" multiple accept=".pdf,.pptx,.txt,.md,.markdown,.csv,.js,.jsx,.ts,.tsx,.py,.java,.c,.cc,.cpp,.cs,.go,.rs,.rb,.php,.html,.css,.json,.sql" className="sr-only" onChange={(event) => void handleContentFiles(event)} />
-        <div className="mt-6 grid gap-2 border-y border-white/10 py-4 sm:grid-cols-3">
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand/35 bg-brand/[.06] px-3 py-3 text-xs font-bold text-brand transition hover:border-brand hover:bg-brand/[.12]"><Upload size={15} /> Add content</button>
-          <button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf || (!content.trim() && !selectedPdfName)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.02] px-3 py-3 text-xs font-bold text-white/75 transition hover:border-brand/40 hover:bg-white/[.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"><WandSparkles size={15} /> {generatingPdf ? "Creating questions" : selectedPdfName ? "Generate from file" : "Generate the Qs"}</button>
-          <button type="button" onClick={personalizeQuestions} disabled={questions.length === 0} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.02] px-3 py-3 text-xs font-bold text-white/75 transition hover:border-brand/40 hover:bg-white/[.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"><WandSparkles size={15} /> Personalize the Qs</button>
-        </div>
-
         <div
           role="button"
           tabIndex={0}
@@ -301,64 +320,86 @@ export function AssignmentStudio() {
           className={`mt-4 cursor-pointer rounded-xl border border-dashed px-4 py-5 text-center transition focus:outline-none focus:ring-2 focus:ring-brand/60 ${isDraggingFiles ? "border-brand bg-brand/[.12]" : "border-white/15 bg-white/[.02] hover:border-brand/50"}`}
         >
           <Upload size={18} className={`mx-auto ${isDraggingFiles ? "text-brand" : "text-white/40"}`} />
-          <p className="mt-2 text-xs font-semibold text-white/75">Drag and drop files here</p>
-          <p className="mt-1 text-[11px] text-muted">or click / paste to add course files and notes</p>
+          <p className="mt-2 text-xs font-semibold text-white/75">Drop your notes or course file here</p>
+          <p className="mt-1 text-[11px] text-muted">or click to choose a PDF, presentation, or text file</p>
         </div>
 
         {selectedFiles.length > 0 && <div className="mt-4 rounded-xl border border-brand/20 bg-brand/[.05] p-4">
           <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-brand">Selected content</p><p className="mt-1 text-[11px] text-muted">Folder picker results · {selectedFiles.length} file{selectedFiles.length === 1 ? "" : "s"}</p></div><button type="button" aria-label="Clear selected content" onClick={() => { setSelectedFiles([]); setSelectedPdfName(""); }} className="text-white/40 hover:text-white"><X size={15} /></button></div>
           <div className="mt-3 space-y-2">{selectedFiles.map((file) => { const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"); const isPresentation = presentationPattern.test(file.name); const isTextDocument = textDocumentPattern.test(file.name) || file.type.startsWith("text/"); return <button key={`${file.name}-${file.size}`} type="button" onClick={() => (isPdf || isPresentation || isTextDocument) && setSelectedPdfName(file.name)} className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${selectedPdfName === file.name ? "border-brand bg-brand-soft text-ink" : "border-white/10 text-white/60"}`}><FileText size={14} className={isPdf || isPresentation || isTextDocument ? "text-brand" : "text-white/35"} /><span className="min-w-0 flex-1 truncate">{file.webkitRelativePath || file.name}</span><span className="text-[10px] text-white/35">{Math.ceil(file.size / 1024)} KB</span></button>; })}</div>
-          {selectedPdfName && <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-white/10 pt-3"><span className="text-xs text-muted">Document selected: <strong className="text-ink">{selectedPdfName}</strong></span><button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf} className="inline-flex items-center gap-2 rounded-lg bg-brand px-3 py-2 text-xs font-bold text-[#171411] disabled:opacity-60">{generatingPdf ? <LoaderCircle size={14} className="animate-spin" /> : <WandSparkles size={14} />} Generate questions from this file</button></div>}
-          <p className="mt-3 text-[11px] leading-5 text-muted">Your material stays in the lesson workflow. You can also paste notes directly or use the file picker.</p>
+          {selectedPdfName && <p className="mt-3 text-xs text-muted">Ready to generate from <strong className="text-ink">{selectedPdfName}</strong>.</p>}
         </div>}
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <label className="text-xs font-semibold text-white/75">Assignment title
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Relational database basics" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
+        <label className="mt-5 block text-xs font-semibold text-white/75">Or paste teaching notes
+          <textarea ref={contentRef} value={content} onChange={(event) => setContent(event.target.value)} rows={5} placeholder="Paste notes here, or drop/upload a file above." className="mt-2 w-full resize-y border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm leading-6 text-ink outline-none focus:border-brand" />
+        </label>
+
+        <div className="mt-5 rounded-xl border border-white/10 bg-black/15 p-4">
+          <p className="text-xs font-bold text-ink">Generate questions from your notes</p>
+          <p className="mt-1 text-[11px] leading-5 text-muted">No topic or assignment details are needed yet. The AI will use your notes to draft questions first.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <label className="text-xs font-semibold text-white/75">Question set
+              <select value={learningStage} onChange={(event) => setLearningStage(event.target.value as LearningStage)} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
+                <option value="diagnostic">Diagnostic · 5 questions</option>
+                <option value="practice">Follow-up practice · 7 questions</option>
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-white/75">AI provider
+              <select value={generationPreference} onChange={(event) => setGenerationPreference(event.target.value as "auto" | "ollama" | "gemini")} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
+                <option value="auto">Automatic</option>
+                <option value="ollama">Local Ollama</option>
+                <option value="gemini">Gemini</option>
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-white/75">Question level
+              <select value={personalizationDifficulty} onChange={(event) => setPersonalizationDifficulty(event.target.value as QuestionDifficulty)} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
+                {difficultyOptions.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="mt-3 block text-xs font-semibold text-white/75">Optional instructions for the AI
+            <input value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="e.g. Use beginner-friendly, real-world examples" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
           </label>
-          <label className="text-xs font-semibold text-white/75">Subject
-            <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="e.g. Database Management Systems" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
-          </label>
-          <label className="text-xs font-semibold text-white/75 sm:col-span-2">Topic
-            <input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. Relational model" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
-          </label>
-          <label className="text-xs font-semibold text-white/75">Learning stage
-            <select value={learningStage} onChange={(event) => setLearningStage(event.target.value as LearningStage)} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
-              <option value="diagnostic">Diagnostic · 5 questions</option>
-              <option value="practice">Follow-up practice · 7 questions</option>
-            </select>
-          </label>
-          <label className="text-xs font-semibold text-white/75 sm:col-span-2">Teaching content
-            <textarea ref={contentRef} value={content} onChange={(event) => setContent(event.target.value)} rows={6} placeholder="Paste notes or explanations here. Draft questions are created from complete sentences in this text." className="mt-2 w-full resize-y border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm leading-6 text-ink outline-none focus:border-brand" />
-          </label>
-          <label className="text-xs font-semibold text-white/75 sm:col-span-2">Personalization direction <span className="font-normal text-white/40">(optional)</span>
-            <input value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="e.g. Use beginner-friendly real-world scenarios" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
-          </label>
-          <label className="text-xs font-semibold text-white/75 sm:col-span-2">Question generation model
-            <select value={generationPreference} onChange={(event) => setGenerationPreference(event.target.value as "auto" | "ollama" | "gemini")} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
-              <option value="auto">Automatic: Gemini with local fallback</option>
-              <option value="ollama">Local Ollama</option>
-              <option value="gemini">Gemini only</option>
-            </select>
-            <span className="mt-1 block font-normal leading-5 text-muted">Choose local Ollama if you want to bypass Gemini for this generation.</span>
-          </label>
-          <label className="text-xs font-semibold text-white/75">Target level
-            <select value={personalizationDifficulty} onChange={(event) => setPersonalizationDifficulty(event.target.value as QuestionDifficulty)} className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand">
-              {difficultyOptions.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty}</option>)}
-            </select>
-          </label>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf || (!content.trim() && !selectedPdfName)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-5 py-3 text-sm font-bold text-[#171411] transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-45"><WandSparkles size={16} /> {generatingPdf ? "Generating questions…" : "Generate questions"}</button>
+            {topicId && <button type="button" onClick={createFollowUpStage} className="inline-flex items-center gap-2 border border-[var(--line)] px-3 py-2 text-xs font-semibold text-brand hover:border-brand">Create another stage for this topic</button>}
+            {!content.trim() && !selectedPdfName && <span className="text-xs text-muted">Add a file or paste notes to begin.</span>}
+          </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={() => contentRef.current?.focus()} className="inline-flex items-center gap-2 text-xs font-semibold text-muted hover:text-brand"><FilePlus2 size={14} /> Or paste notes manually</button>
-          {topicId && <button type="button" onClick={createFollowUpStage} className="inline-flex items-center gap-2 border border-[var(--line)] px-3 py-2 text-xs font-semibold text-brand hover:border-brand">Create another stage for this topic</button>}
-          {questions.length > 0 && <span className="text-xs text-muted">{questions.length} drafts ready to review</span>}
-        </div>
+        {generationFailed && <div role="alert" className="mt-4 border border-[#7a3535] bg-[#241719] px-4 py-3 text-sm text-[#ffb3aa]">
+          <p className="font-semibold">Question generation failed</p>
+          <p className="mt-1 text-xs leading-5">{message}</p>
+          <button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf || (!content.trim() && !selectedPdfName)} className="mt-3 inline-flex items-center gap-2 border border-[#ffb3aa]/40 px-3 py-2 text-xs font-semibold text-[#ffb3aa] hover:bg-[#ffb3aa]/10 disabled:cursor-not-allowed disabled:opacity-50"><WandSparkles size={14} /> Retry generation</button>
+        </div>}
+
+        {generatingPdf && <div role="status" aria-live="polite" className="mt-5 overflow-hidden rounded-xl border border-brand/25 bg-brand/[.06] p-4">
+          <div className="flex items-start gap-3">
+            <LoaderCircle size={19} className="mt-0.5 shrink-0 animate-spin text-brand" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-ink">Creating your question drafts</p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                {generationPreference === "ollama" ? "Local Ollama is reading your notes and writing questions." : generationPreference === "gemini" ? "Gemini is reading your notes and writing questions." : "The selected AI provider is reading your notes and writing questions."}
+                {" "}This can take longer for large files.
+              </p>
+              <p className="mt-2 text-[11px] text-brand">{generationSeconds < 5 ? "Preparing document…" : generationSeconds < 20 ? "Sending notes to the selected AI…" : generationSeconds < 55 ? "Writing and checking questions…" : generationPreference === "auto" ? "The AI is taking longer than expected. Automatic mode may be waiting for Gemini before trying local Ollama." : "The AI is taking longer than expected; a timeout error will appear here if it cannot finish."}</p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="generation-progress h-full w-1/3 rounded-full bg-brand" /></div>
+            </div>
+            <span className="shrink-0 text-xs tabular-nums text-muted">{Math.floor(generationSeconds / 60)}:{String(generationSeconds % 60).padStart(2, "0")}</span>
+          </div>
+          <p className="mt-3 text-[10px] text-white/45">Reading source material · drafting questions · checking answers</p>
+        </div>}
+
+        {questions.length > 0 && <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
+          <span className="text-xs font-semibold text-emerald-300">{questions.length} question drafts are ready</span>
+          <button type="button" onClick={personalizeQuestions} className="inline-flex items-center gap-2 border border-[var(--line)] px-3 py-2 text-xs font-semibold text-white/75 hover:border-brand"><WandSparkles size={14} /> Personalize questions</button>
+        </div>}
 
         {questions.length > 0 && (
-          <div className="mt-6 space-y-4">
+          <div ref={questionsRef} id="generated-questions" className="mt-6 scroll-mt-6 space-y-4">
+            <div className="border-b border-white/10 pb-3"><h3 className="text-lg font-bold text-ink">Generated question drafts</h3><p className="mt-1 text-xs text-muted">Add the assignment details below after reviewing the questions.</p></div>
             {questions.map((question, index) => (
-              <div key={question.id} className="border border-[var(--line)] bg-[#111518] p-4 sm:p-5">
+              <div key={question.id} style={{ animationDelay: `${Math.min(index * 70, 490)}ms` }} className="question-arrive border border-[var(--line)] bg-[#111518] p-4 sm:p-5">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <h3 className="text-sm font-bold text-ink">Question {index + 1}</h3>
                   <label className="sr-only" htmlFor={`difficulty-${question.id}`}>Question {index + 1} difficulty</label>
@@ -380,20 +421,37 @@ export function AssignmentStudio() {
                 </label>}
                 <p className="mt-3 border-l-2 border-brand/50 pl-3 text-xs leading-5 text-muted"><strong className="text-white/70">Source:</strong> {question.source}</p>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
-                  <span className={`text-[10px] font-bold uppercase tracking-[.1em] ${question.generationStatus === "needs-review" ? "text-amber-300" : "text-emerald-300"}`}>{question.generationStatus === "needs-review" ? "Needs a quick check" : question.reviewStatus === "reviewed" ? "Ready to publish" : "Draft question"}</span>
-                  {question.reviewStatus !== "reviewed" && <button type="button" onClick={() => verifyQuestion(question.id)} className="border border-brand/40 px-2.5 py-1.5 text-[11px] font-semibold text-brand hover:bg-brand/10">Mark as checked</button>}
+                  <span className={`text-[10px] font-bold uppercase tracking-[.1em] ${question.reviewStatus === "reviewed" ? "text-emerald-300" : question.generationStatus === "needs-review" ? "text-amber-300" : "text-white/55"}`}>{question.reviewStatus === "reviewed" ? "Teacher approved" : question.generationStatus === "needs-review" ? "Needs careful review" : "Awaiting teacher approval"}</span>
+                  {question.reviewStatus !== "reviewed" && <button type="button" onClick={() => approveQuestion(question.id)} className="border border-brand/40 px-3 py-2 text-[11px] font-semibold text-brand hover:bg-brand/10">Approve question</button>}
                 </div>
               </div>
             ))}
-            <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={() => saveAssignment("draft")} className="inline-flex items-center gap-2 border border-[var(--line)] px-4 py-3 text-sm font-semibold text-ink hover:border-brand"><Check size={15} /> Save draft</button>
-              <button type="button" onClick={() => saveAssignment("published")} className="inline-flex items-center gap-2 bg-brand px-4 py-3 text-sm font-bold text-[#171411] hover:bg-brand-dark"><Send size={15} /> Add kit to student portal</button>
+            <div className="rounded-xl border border-brand/20 bg-brand/[.04] p-4">
+              <h3 className="text-sm font-bold text-ink">Add assignment details</h3>
+              <p className="mt-1 text-xs leading-5 text-muted">These details are required to save a draft or publish the approved questions to students.</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="text-xs font-semibold text-white/75">Assignment title
+                  <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Relational database basics" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
+                </label>
+                <label className="text-xs font-semibold text-white/75">Subject
+                  <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="e.g. Database Management Systems" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
+                </label>
+                <label className="text-xs font-semibold text-white/75 sm:col-span-2">Topic
+                  <input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. Relational model" className="mt-2 w-full border border-[var(--line)] bg-[#0b0d0f] px-3 py-3 text-sm text-ink outline-none focus:border-brand" />
+                </label>
+              </div>
             </div>
+            <div className="flex flex-wrap items-center gap-3 border-t border-[var(--line)] pt-4">
+              <p className="mr-auto text-xs text-muted">Teacher approval: {approvedQuestionCount}/{questions.length} questions</p>
+              {approvedQuestionCount < questions.length && <button type="button" onClick={approveAllQuestions} className="inline-flex items-center gap-2 border border-brand/40 px-4 py-3 text-sm font-semibold text-brand hover:bg-brand/10"><Check size={15} /> Approve all after review</button>}
+              <button type="button" onClick={() => saveAssignment("draft")} className="inline-flex items-center gap-2 border border-[var(--line)] px-4 py-3 text-sm font-semibold text-ink hover:border-brand"><Check size={15} /> Save draft</button>
+              <button type="button" onClick={() => saveAssignment("published")} disabled={!canPublish} className="inline-flex items-center gap-2 bg-brand px-4 py-3 text-sm font-bold text-[#171411] hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-45"><Send size={15} /> Publish approved questions</button>
+            </div>
+            <p className="text-[11px] leading-5 text-muted">Check each question against its source excerpt, confirm the answer and choices, then approve it. Editing a question removes its approval.</p>
           </div>
         )}
 
         {message && <p role={generationFailed ? "alert" : "status"} aria-live={generationFailed ? "assertive" : "polite"} className={`mt-4 text-xs leading-5 ${generationFailed ? "text-[#ffb3aa]" : "text-muted"}`}>{message}</p>}
-        {generationFailed && <button type="button" onClick={() => void generateQuestionsFromMaterial()} disabled={generatingPdf || (!content.trim() && !selectedPdfName)} className="mt-3 inline-flex items-center gap-2 border border-brand/40 px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-50"><WandSparkles size={14} /> Retry generation</button>}
         <p className="mt-5 border-t border-[var(--line)] pt-4 text-[11px] leading-5 text-muted">Saved assignments are loaded from the connected workspace. Nothing is shown until it has been saved.</p>
       </SectionCard>
 

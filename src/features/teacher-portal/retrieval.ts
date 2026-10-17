@@ -16,7 +16,7 @@ export interface RetrievalQuery {
 export function retrieveRelevantChunks(chunks: readonly SourceChunk[], query: RetrievalQuery): SourceChunk[] {
   const allowed = new Set(query.documentIds);
   const queryTokens = new Set(tokens([query.topic ?? "", ...(query.objectives ?? [])].join(" ")));
-  return chunks
+  const ranked = chunks
     .filter((chunk) => allowed.has(chunk.documentId))
     .map((chunk, index) => {
       const haystack = new Set(tokens(`${chunk.topic ?? ""} ${chunk.concepts.join(" ")} ${chunk.content}`));
@@ -25,7 +25,27 @@ export function retrieveRelevantChunks(chunks: readonly SourceChunk[], query: Re
       return { chunk, score: overlap + topicMatch, index };
     })
     .filter((item) => item.score > 0 || queryTokens.size === 0)
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .slice(0, query.limit ?? 8)
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+  const limit = Math.max(1, query.limit ?? 8);
+  if (ranked.length <= limit) return ranked.map((item) => item.chunk);
+
+  const selected = new Map<number, (typeof ranked)[number]>();
+  const documentChunkCount = Math.max(chunks.length, 1);
+  for (const item of ranked) {
+    const section = Math.min(limit - 1, Math.floor(item.index / documentChunkCount * limit));
+    const current = selected.get(section);
+    if (!current || item.score > current.score || (item.score === current.score && item.index < current.index)) {
+      selected.set(section, item);
+    }
+  }
+  for (const item of ranked) {
+    if (selected.size >= limit) break;
+    if (![...selected.values()].some((chosen) => chosen.index === item.index)) {
+      selected.set(limit + item.index, item);
+    }
+  }
+  return [...selected.values()]
+    .sort((left, right) => left.index - right.index)
+    .slice(0, limit)
     .map((item) => item.chunk);
 }

@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { AppRole } from "@/lib/auth/authorization";
-import { hasAppRole } from "@/lib/auth/authorization";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { ApiResponse } from "@/types/api";
 
 const workspacePaths: Record<AppRole, string> = {
@@ -19,14 +17,13 @@ const roleLoginPaths: Record<AppRole, string> = {
   teacher: "/login/teacher",
 };
 
-export function LoginForm({ role, roleMismatch = false, demoMode = false }: { role: AppRole; roleMismatch?: boolean; demoMode?: boolean }) {
+export function LoginForm({ role, roleMismatch = false }: { role: AppRole; roleMismatch?: boolean }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(roleMismatch ? "This account does not have access to this workspace." : "");
   const [pending, setPending] = useState(false);
-  const supabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   const otherRole = role === "student" ? "teacher" : "student";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -34,48 +31,21 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
     setError("");
     setPending(true);
 
-    if (demoMode) {
-      try {
-        const response = await fetch(role === "student" ? "/api/student/demo-login" : "/api/teacher/demo-login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-        const payload = await response.json() as ApiResponse<{ demoMode: true }>;
-        if (!response.ok || !payload.ok) throw new Error(payload.ok ? `${role} demo access could not be created.` : payload.error.message);
-        setPassword("");
-        router.replace(workspacePaths[role]);
-        router.refresh();
-      } catch (submitError) {
-        setError(submitError instanceof Error ? submitError.message : `${role} demo access could not be created.`);
-        setPending(false);
-      }
-      return;
-    }
-
-    const supabase = createSupabaseBrowserClient();
-    if (!supabase) {
-      setError("Enter an email and password to continue.");
+    try {
+      const response = await fetch(role === "student" ? "/api/student/demo-login" : "/api/teacher/demo-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const payload = await response.json() as ApiResponse<{ demoMode: true }>;
+      if (!response.ok || !payload.ok) throw new Error(payload.ok ? `${role} demo access could not be created.` : payload.error.message);
+      setPassword("");
+      router.replace(workspacePaths[role]);
+      router.refresh();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : `${role} demo access could not be created.`);
       setPending(false);
-      return;
     }
-
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError || !data.user) {
-      setError(signInError?.message ?? "Unable to sign in. Check your details and try again.");
-      setPending(false);
-      return;
-    }
-
-    if (!hasAppRole(data.user, role)) {
-      await supabase.auth.signOut();
-      setError(`This account is not assigned the ${role} role. Contact your administrator.`);
-      setPending(false);
-      return;
-    }
-
-    router.replace(workspacePaths[role]);
-    router.refresh();
   }
 
   return (
@@ -84,24 +54,17 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
       <div className="mt-8 border border-[var(--line)] bg-[var(--panel)] p-6 sm:p-8">
         <p className="text-[11px] font-bold uppercase tracking-[.16em] text-brand">{role} workspace</p>
         <h1 className="mt-3 text-3xl font-bold text-ink">Sign in</h1>
-        <p className="mt-2 text-sm leading-6 text-muted">{demoMode ? "Enter any email or name and password to continue." : `Use the ${role} account assigned to you.`}</p>
+        <p className="mt-2 text-sm leading-6 text-muted">Enter any email or name and password to continue.</p>
 
-        {demoMode ? <div className="mt-5 border border-brand/25 bg-brand/[.05] px-3 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-[.13em] text-brand">Demo access</p>
-          <p className="mt-1 text-xs leading-5 text-muted">Enter any email or name and any password to continue. No registration is required and passwords are not stored.</p>
-        </div> : !supabaseConfigured && (
-          <p className="mt-5 border-l-2 border-brand px-3 py-2 text-xs leading-5 text-muted">
-            {role === "teacher" ? "Local teacher access is available while authentication is being configured. Set the Supabase URL and anon key to enforce account roles." : "Authentication is not configured yet. Set the Supabase URL and anon key to enable sign-in."}
-          </p>
-        )}
+        
 
         {error && <p role="alert" className="mt-5 text-sm text-[#ffb3aa]">{error}</p>}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <label className="block text-xs font-semibold text-white/75">
-            {demoMode ? "Email or name" : "Email"}
+            Email or name
             <input
-              type={demoMode ? "text" : "email"}
+              type="text"
               name="email"
               autoComplete="username"
               required
@@ -129,10 +92,10 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
           </label>
           <button
             type="submit"
-            disabled={pending || (!supabaseConfigured && role === "student" && !demoMode)}
+            disabled={pending}
             className="w-full bg-brand px-4 py-3 text-sm font-bold text-[#171411] transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? "Signing in..." : supabaseConfigured || role !== "teacher" ? `Sign in as ${role}` : "Enter teacher workspace"}
+            {pending ? "Signing in..." : `Sign in as ${role}`}
           </button>
         </form>
 

@@ -1,10 +1,8 @@
 import { cookies } from "next/headers";
-import { hasAppRole } from "@/lib/auth/authorization";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const DEMO_TEACHER_COOKIE = "skillpath_demo_teacher_id";
 
-export type TeacherSession = { id: string; email: string; mode: "demo" | "supabase" };
+export type TeacherSession = { id: string; email: string; mode: "demo" };
 
 export function isTeacherDemoModeEnabled(): boolean {
   return true;
@@ -17,11 +15,7 @@ export async function getTeacherSession(): Promise<TeacherSession | null> {
     return { id: "demo-teacher", email: "demo-teacher", mode: "demo" };
   }
 
-  const supabase = await createSupabaseServerClient();
-  if (!supabase || isTeacherDemoModeEnabled()) return null;
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !hasAppRole(user, "teacher")) return null;
-  return { id: user.id, email: user.email ?? "", mode: "supabase" };
+  return null;
 }
 
 export async function setDemoTeacherSession(): Promise<void> {

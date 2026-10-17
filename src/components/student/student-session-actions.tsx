@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 export function StudentSessionActions({ role = "student", email, demoMode }: { role?: "student" | "teacher"; email: string; demoMode: boolean }) {
   const router = useRouter();
@@ -14,15 +13,8 @@ export function StudentSessionActions({ role = "student", email, demoMode }: { r
     setPending(true);
     setError("");
     try {
-      if (demoMode) {
-        const response = await fetch(role === "student" ? "/api/student/demo-login" : "/api/teacher/demo-login", { method: "DELETE" });
-        if (!response.ok) throw new Error("Could not end the demo session.");
-      } else {
-        const supabase = createSupabaseBrowserClient();
-        if (!supabase) throw new Error("Authentication is unavailable.");
-        const { error: signOutError } = await supabase.auth.signOut();
-        if (signOutError) throw new Error(signOutError.message);
-      }
+      const response = await fetch(role === "student" ? "/api/student/demo-login" : "/api/teacher/demo-login", { method: "DELETE" });
+      if (!response.ok) throw new Error("Could not end the demo session.");
       router.replace(`/login/${role}`);
       router.refresh();
     } catch (signOutError) {
