@@ -19,7 +19,7 @@ export type StudentLearningEvent = {
 const eventsPath = path.join(process.cwd(), ".data", "student-portal", "events.json");
 
 export async function listDemoStudentEvents(learnerId?: string): Promise<StudentLearningEvent[]> {
-  assertLocalPersistenceAllowed("Student learning events");
+  assertLocalPersistenceAllowed("Student learning events", true);
   try {
     const parsed: unknown = JSON.parse(await readFile(eventsPath, "utf8"));
     if (!Array.isArray(parsed)) return [];

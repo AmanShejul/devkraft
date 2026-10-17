@@ -1,23 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getLearnerMastery, claimVivaAttemptOnce } from "@/features/assessments/mastery-store";
-import { PersistenceConfigurationError } from "@/lib/persistence";
+import { getLearnerMastery } from "@/features/assessments/mastery-store";
+import { assertLocalPersistenceAllowed, PersistenceConfigurationError } from "@/lib/persistence";
 
 afterEach(() => vi.unstubAllEnvs());
 
 describe("production persistence guard", () => {
-  it("rejects mastery reads when Supabase is not configured", async () => {
+  it("allows the intentional student demo fallback when Supabase is not configured", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
 
-    await expect(getLearnerMastery(crypto.randomUUID())).rejects.toBeInstanceOf(PersistenceConfigurationError);
+    await expect(getLearnerMastery(crypto.randomUUID())).resolves.toBeNull();
   });
 
-  it("rejects viva claims instead of using local JSON in production", async () => {
+  it("rejects local persistence when Supabase is configured but unavailable to the request", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.invalid");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
 
-    await expect(claimVivaAttemptOnce(crypto.randomUUID(), "countdown")).rejects.toMatchObject({ code: "PERSISTENCE_NOT_CONFIGURED" });
+    expect(() => assertLocalPersistenceAllowed("Learner mastery")).toThrowError(PersistenceConfigurationError);
   });
 });

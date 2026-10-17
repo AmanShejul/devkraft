@@ -3,7 +3,7 @@ import { findOrCreateDemoStudent } from "@/features/student-portal/demo-profile-
 import { clearDemoStudentSession, isStudentDemoModeEnabled, setDemoStudentSession } from "@/lib/auth/student-session";
 import { apiFailure, apiSuccess } from "@/types/api";
 
-const credentialsSchema = z.object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(1024) }).strict();
+const credentialsSchema = z.object({ email: z.string().trim().min(1).max(254), password: z.string().min(1).max(1024) }).strict();
 
 export async function POST(request: Request): Promise<Response> {
   if (!isStudentDemoModeEnabled()) {
@@ -15,7 +15,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(apiFailure("INVALID_JSON", "Request body must be valid JSON."), { status: 400 });
   }
   const parsed = credentialsSchema.safeParse(body);
-  if (!parsed.success) return Response.json(apiFailure("INVALID_CREDENTIALS", "Enter a valid email and a non-empty password."), { status: 400 });
+  if (!parsed.success) return Response.json(apiFailure("INVALID_CREDENTIALS", "Enter any non-empty email or name and password."), { status: 400 });
 
   try {
     const { profile, created } = await findOrCreateDemoStudent(parsed.data.email);

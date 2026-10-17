@@ -28,7 +28,7 @@ const EMPTY_STATE: DemoState = { documents: [], assignments: [], attempts: [] };
 const statePath = path.join(process.cwd(), ".data", "teacher-portal", "state.json");
 
 async function readDemoState(): Promise<DemoState> {
-  assertLocalPersistenceAllowed("Teacher and student records");
+  assertLocalPersistenceAllowed("Teacher and student records", true);
   try {
     const parsed: unknown = JSON.parse(await readFile(statePath, "utf8"));
     if (!parsed || typeof parsed !== "object") return { ...EMPTY_STATE };

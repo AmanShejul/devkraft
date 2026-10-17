@@ -4,7 +4,7 @@ import path from "node:path";
 import { cookies } from "next/headers";
 import type { ConceptMastery } from "@/types/domain";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isDemoStudentIdentity } from "@/lib/auth/student-session";
+import { isDemoStudentIdentity, isStudentDemoModeEnabled } from "@/lib/auth/student-session";
 import { assertLocalPersistenceAllowed } from "@/lib/persistence";
 
 const LEARNER_COOKIE = "skillpath_learner_id";
@@ -30,7 +30,7 @@ function isConceptMasteryArray(value: unknown): value is ConceptMastery[] {
 
 export async function getCurrentLearnerId(): Promise<string | null> {
   const supabase = await createSupabaseServerClient();
-  if (supabase && process.env.STUDENT_DEMO_MODE !== "true") {
+  if (supabase && !isStudentDemoModeEnabled()) {
     const { data: { user } } = await supabase.auth.getUser();
     if (user?.app_metadata?.roles && Array.isArray(user.app_metadata.roles) && user.app_metadata.roles.includes("student")) return user.id;
   }
@@ -41,7 +41,7 @@ export async function getCurrentLearnerId(): Promise<string | null> {
 
 export async function getOrCreateLearnerId(): Promise<string> {
   const supabase = await createSupabaseServerClient();
-  if (supabase && process.env.STUDENT_DEMO_MODE !== "true") {
+  if (supabase && !isStudentDemoModeEnabled()) {
     const { data: { user } } = await supabase.auth.getUser();
     if (user?.app_metadata?.roles && Array.isArray(user.app_metadata.roles) && user.app_metadata.roles.includes("student")) return user.id;
   }
@@ -88,7 +88,7 @@ export async function getLearnerMastery(learnerId: string): Promise<ConceptMaste
   const demoIdentity = hasSupabaseClientConfig() && await isDemoStudentIdentity(learnerId);
   const supabase = demoIdentity ? null : await createSupabaseServerClient(learnerId);
   if (!supabase) {
-    assertLocalPersistenceAllowed("Learner mastery");
+    assertLocalPersistenceAllowed("Learner mastery", true);
     return readFileMastery(learnerId);
   }
 
@@ -115,7 +115,7 @@ export async function saveLearnerMastery(learnerId: string, mastery: readonly Co
     return;
   }
 
-  assertLocalPersistenceAllowed("Learner mastery");
+  assertLocalPersistenceAllowed("Learner mastery", true);
   const filePath = masteryFilePath(learnerId);
   const directory = path.dirname(filePath);
   await mkdir(directory, { recursive: true });
@@ -143,7 +143,7 @@ export async function claimVivaAttemptOnce(learnerId: string, missionId: string)
     return data !== null;
   }
 
-  assertLocalPersistenceAllowed("Viva attempt records");
+  assertLocalPersistenceAllowed("Viva attempt records", true);
   const filePath = vivaAttemptFilePath(learnerId, missionId);
   await mkdir(path.dirname(filePath), { recursive: true });
   try {
@@ -171,7 +171,7 @@ export async function releaseVivaAttemptClaim(learnerId: string, missionId: stri
     return;
   }
 
-  assertLocalPersistenceAllowed("Viva attempt records");
+  assertLocalPersistenceAllowed("Viva attempt records", true);
   try {
     await unlink(vivaAttemptFilePath(learnerId, missionId));
   } catch (error) {

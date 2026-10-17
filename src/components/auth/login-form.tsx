@@ -102,7 +102,7 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
         <p className="mt-2 text-sm leading-6 text-muted">Use the {role} account assigned to you.</p>
 
         {role === "student" && demoMode ? <div className="mt-5 flex items-center justify-between gap-3 border border-brand/25 bg-brand/[.05] px-3 py-3">
-          <div><p className="text-[10px] font-bold uppercase tracking-[.13em] text-brand">Demo mode</p><p className="mt-1 text-xs leading-5 text-muted">{registering ? "Create a profile with your email." : "Any valid email and non-empty password works."} Passwords are not stored.</p></div>
+          <div><p className="text-[10px] font-bold uppercase tracking-[.13em] text-brand">Demo mode</p><p className="mt-1 text-xs leading-5 text-muted">{registering ? "Create a profile with any email or name." : "Any non-empty email or name and password works."} Passwords are not stored.</p></div>
           <div className="flex shrink-0 border border-[var(--line)] p-1" role="group" aria-label="Student demo account action">
             <button type="button" aria-pressed={!registering} onClick={() => setRegistering(false)} className={`px-2.5 py-2 text-[11px] font-semibold ${registering ? "text-muted" : "bg-brand text-[#171411]"}`}>Login</button>
             <button type="button" aria-pressed={registering} onClick={() => setRegistering(true)} className={`px-2.5 py-2 text-[11px] font-semibold ${registering ? "bg-brand text-[#171411]" : "text-muted"}`}>Register</button>
@@ -119,7 +119,7 @@ export function LoginForm({ role, roleMismatch = false, demoMode = false }: { ro
           <label className="block text-xs font-semibold text-white/75">
             Email
             <input
-              type="email"
+              type={role === "student" && demoMode ? "text" : "email"}
               name="email"
               autoComplete="username"
               required

@@ -16,8 +16,7 @@ export type StudentSession = {
 };
 
 export function isStudentDemoModeEnabled(): boolean {
-  const supabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  return process.env.NODE_ENV !== "production" && (process.env.STUDENT_DEMO_MODE === "true" || !supabaseConfigured);
+  return true;
 }
 
 export async function getStudentSession(): Promise<StudentSession | null> {

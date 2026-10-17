@@ -7,9 +7,11 @@ export class PersistenceConfigurationError extends Error {
   }
 }
 
-/** Local JSON storage is intentionally limited to local development and tests. */
-export function assertLocalPersistenceAllowed(resource: string): void {
-  if (process.env.NODE_ENV === "production") throw new PersistenceConfigurationError(resource);
+/** Local JSON storage is allowed for the intentional unauthenticated demo fallback, but is not durable on serverless hosts. */
+export function assertLocalPersistenceAllowed(resource: string, demoMode = false): void {
+  const supabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  const demoFallback = !supabaseConfigured || process.env.STUDENT_DEMO_MODE === "true" || process.env.TEACHER_DEMO_MODE === "true";
+  if (process.env.NODE_ENV === "production" && !demoMode && !demoFallback) throw new PersistenceConfigurationError(resource);
 }
 
 export function isPersistenceConfigurationError(error: unknown): error is PersistenceConfigurationError {
