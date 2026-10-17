@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
-type HeadingTag = "h1" | "h2" | "h3" | "p" | "span";
+export type HeadingTag = "h1" | "h2" | "h3" | "p" | "span";
 
 export function SplitReveal({
   children,
@@ -31,21 +31,23 @@ export function SplitReveal({
         aria-hidden="true"
       >
         {words.map((word, index) => (
-          <motion.span
-            key={`${word}-${index}`}
-            className="mr-[0.24em] inline-block last:mr-0"
-            variants={{
-              hidden: { opacity: 0, y: 16, filter: "blur(8px)" },
-              visible: {
-                opacity: 1,
-                y: 0,
-                filter: "blur(0px)",
-                transition: { type: "spring", stiffness: 120, damping: 20 },
-              },
-            }}
-          >
-            {word}
-          </motion.span>
+          <Fragment key={`${word}-${index}`}>
+            <motion.span
+              className="inline-block"
+              variants={{
+                hidden: { opacity: 0, y: 16, filter: "blur(8px)" },
+                visible: {
+                  opacity: 1,
+                  y: 0,
+                  filter: "blur(0px)",
+                  transition: { type: "spring", stiffness: 120, damping: 20 },
+                },
+              }}
+            >
+              {word}
+            </motion.span>
+            {index < words.length - 1 ? " " : null}
+          </Fragment>
         ))}
       </motion.span>
     </Tag>
